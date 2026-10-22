@@ -133,6 +133,12 @@
   }
   .banner.warn { background: #fff7ed; color: #9a3412; border-color: #fdba74; }
   @media (prefers-color-scheme: dark) { .banner.warn { background: #3a2a17; color: #fdba74; } }
+  .banner.info { background: #eff6ff; color: #1e40af; border-color: #bfdbfe; position: relative; }
+  @media (prefers-color-scheme: dark) { .banner.info { background: #17233b; color: #93c5fd; } }
+  .banner.info button.dismiss {
+    position: absolute; top: 6px; right: 8px; border: none; background: transparent;
+    color: inherit; cursor: pointer; font-size: 14px; padding: 2px 6px;
+  }
 
   #toast {
     position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%);
@@ -169,6 +175,10 @@
 
 <main>
   <div id="expired-banner" class="banner warn hidden" data-i18n="expired_banner"></div>
+  <div id="list-info-banner" class="banner info hidden">
+    <span data-i18n-html="list_info"></span>
+    <button class="dismiss" id="dismiss-info" title="OK">✕</button>
+  </div>
 
   <!-- session setup -->
   <section id="setup-card" class="card hidden">
@@ -246,6 +256,8 @@ const I18N = {
     auth_lost: "Session no longer valid — please reconnect.",
     error_generic: "Something went wrong",
     remove_title: "Remove from list",
+    list_info: "ℹ️ Items are added to your shared <b>“Mijn lijstje”</b> (the list in the Collect&Go app / colruyt.be) — not directly into the <b>winkelmand</b>. Open your cart via the 🧺 button above and tap <b>“Add list to cart”</b> there to check out.",
+    added_to_list: "added to your list ✓",
     updated_at: "Updated",
     session_saved: "Session saved — connected!",
     session_rejected: "Colruyt rejected that session. Did you copy the full value?",
@@ -271,6 +283,8 @@ const I18N = {
     auth_lost: "Sessie niet meer geldig — koppel opnieuw.",
     error_generic: "Er ging iets mis",
     remove_title: "Verwijder van lijstje",
+    list_info: "ℹ️ Producten komen op je gedeelde <b>“Mijn lijstje”</b> (het lijstje in de Collect&Go-app / op colruyt.be) — niet rechtstreeks in je <b>winkelmand</b>. Open je mand via de 🧺-knop hierboven en tik daar op <b>“Lijstje aan winkelmand toevoegen”</b> om af te rekenen.",
+    added_to_list: "op je lijstje gezet ✓",
     updated_at: "Bijgewerkt",
     session_saved: "Sessie bewaard — gekoppeld!",
     session_rejected: "Colruyt aanvaardde die sessie niet. Heb je de volledige waarde gekopieerd?",
@@ -296,6 +310,8 @@ const I18N = {
     auth_lost: "Session expirée — reconnectez-vous.",
     error_generic: "Quelque chose a raté",
     remove_title: "Retirer de la liste",
+    list_info: "ℹ️ Les articles sont ajoutés à votre <b>« Ma liste »</b> partagée (la liste dans l’app Collect&Go / sur colruyt.be) — pas directement dans le <b>chariot</b>. Ouvrez votre chariot via le bouton 🧺 ci-dessus et touchez <b>« Ajouter la liste au chariot »</b> pour payer.",
+    added_to_list: "ajouté à votre liste ✓",
     updated_at: "Mis à jour",
     session_saved: "Session enregistrée — connecté !",
     session_rejected: "Colruyt a refusé cette session. Avez-vous copié toute la valeur ?",
@@ -366,6 +382,9 @@ function showMain() {
   $("#setup-card").classList.add("hidden");
   $("#main-view").classList.remove("hidden");
   $("#expired-banner").classList.add("hidden");
+  if (localStorage.getItem("cg-info-dismissed") !== "1") {
+    $("#list-info-banner").classList.remove("hidden");
+  }
   $("#disconnect-btn").classList.remove("hidden");
   $("#cart-link").classList.remove("hidden");
   if (state && state.cart_url) $("#cart-link").href = state.cart_url;
@@ -427,6 +446,7 @@ function productCard(p) {
     try {
       await addItem({ product_id: p.product_id, description: p.short_name || p.name, quantity: parseInt(val.textContent, 10) });
       add.textContent = t("added");
+      toast(t("added_to_list"));
       setTimeout(() => { add.textContent = t("add"); add.disabled = false; }, 1200);
     } catch (e) { add.disabled = false; handleError(e); }
   };
@@ -444,7 +464,12 @@ function renderProducts(el, wrap, products) {
 function renderList(items) {
   const ul = $("#list");
   ul.innerHTML = "";
-  items.forEach((it) => {
+  // Open items first (newest on top), completed items at the bottom.
+  const sorted = [...items].sort((a, b) => {
+    if (!!a.completed !== !!b.completed) return a.completed ? 1 : -1;
+    return String(b.created_at || "").localeCompare(String(a.created_at || ""));
+  });
+  sorted.forEach((it) => {
     const li = document.createElement("li");
     if (it.completed) li.className = "done";
     const desc = document.createElement("span");
@@ -567,6 +592,10 @@ document.addEventListener("DOMContentLoaded", () => {
     try { await api("session", { method: "DELETE" }); } catch (_) {}
     setStatus("off", t("not_connected"));
     showSetup(false);
+  };
+  $("#dismiss-info").onclick = () => {
+    $("#list-info-banner").classList.add("hidden");
+    localStorage.setItem("cg-info-dismissed", "1");
   };
   $("#free-add").onclick = async () => {
     const v = $("#free-text").value.trim();
