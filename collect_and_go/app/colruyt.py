@@ -18,6 +18,7 @@ Product search works with only the API key, no session required.
 
 from __future__ import annotations
 
+import json
 import uuid
 from datetime import datetime, timezone
 from typing import Any, Optional
@@ -73,6 +74,21 @@ def _check_response(resp: httpx.Response) -> None:
         raise UpstreamError(f"unexpected status {resp.status_code}")
 
 
+def _json(resp: httpx.Response) -> Any:
+    """Parse a response body as JSON, tolerating empty/non-JSON bodies.
+
+    The Colruyt BFF sometimes answers 201 with a plain-text body, and the
+    WAF in front of it can answer with an HTML page — neither parses.
+    """
+    try:
+        return resp.json()
+    except (json.JSONDecodeError, UnicodeDecodeError, ValueError):
+        preview = resp.text[:200] if resp.text else "(empty body)"
+        raise UpstreamError(
+            f"non-JSON response (HTTP {resp.status_code}): {preview}"
+        ) from None
+
+
 def _utcnow_iso() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
 
@@ -110,15 +126,19 @@ def normalize_list_item(i: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def parse_list_response(data: dict[str, Any]) -> list[dict[str, Any]]:
+def parse_list_response(data: Any) -> list[dict[str, Any]]:
     """The list endpoint has used several shapes over time; handle them all."""
+    if not isinstance(data, dict):
+        return []
     raw_items = (
         (data.get("getListItems") or {}).get("data")
         or (data.get("data") or {}).get("items")
         or data.get("items")
         or []
     )
-    return [normalize_list_item(i) for i in raw_items]
+    if not isinstance(raw_items, list):
+        return []
+    return [normalize_list_item(i) for i in raw_items if isinstance(i, dict)]
 
 
 class ColruytClient:
@@ -192,7 +212,7 @@ class ColruytClient:
         async with self._client() as client:
             resp = await client.get(f"{BASE_URL}/latest-shopping-list", params=params)
             _check_response(resp)
-            return parse_list_response(resp.json())
+            return parse_list_response(_json(resp))
 
     async def add_items(
         self, items: list[dict[str, Any]]
@@ -225,7 +245,7 @@ class ColruytClient:
                 f"{BASE_URL}/add-items-to-list", json={"items": payload_items}
             )
             _check_response(resp)
-            return parse_list_response(resp.json())
+            return parse_list_response(_json(resp))
 
     async def remove_item(self, item_id: str) -> bool:
         """Remove a shopping-list item by its UUID."""
@@ -254,11 +274,15 @@ class ColruytClient:
                 SEARCH_URL.format(lang=self.lang), params=params
             )
             _check_response(resp)
-            data = resp.json()
+            data = _json(resp)
+            if not isinstance(data, dict):
+                raise UpstreamError("unexpected search response shape")
             return {
                 "total": data.get("productsFound", 0),
                 "products": [
-                    normalize_product(p) for p in data.get("products", [])
+                    normalize_product(p)
+                    for p in data.get("products", [])
+                    if isinstance(p, dict)
                 ],
             }
 
@@ -268,6 +292,8 @@ class ColruytClient:
         async with self._client() as client:
             resp = await client.get(f"{BASE_URL}/most-bought-products", params=params)
             _check_response(resp)
-            data = resp.json()
+            data = _json(resp)
             products = data if isinstance(data, list) else data.get("products", [])
-            return [normalize_product(p) for p in products[:size]]
+            return [
+                normalize_product(p) for p in products[:size] if isinstance(p, dict)
+            ]
