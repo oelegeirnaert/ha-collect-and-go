@@ -32,7 +32,7 @@ from colruyt import (
 )
 from session_store import SessionStore, extract_session_cookie
 
-APP_VERSION = "1.0.2"
+APP_VERSION = "1.0.3"
 DATA_DIR = Path(os.environ.get("DATA_DIR", "/data"))
 OPTIONS_FILE = DATA_DIR / "options.json"
 INDEX_FILE = Path(__file__).parent / "static" / "index.html"
