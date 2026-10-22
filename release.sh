@@ -36,7 +36,7 @@ sed -i -E "s/^APP_VERSION = \"$CUR\"$/APP_VERSION = \"$NEW\"/" "$APP"
 TMP=$(mktemp)
 awk -v v="$NEW" -v d="$TODAY" -v n="$NOTE" '
   /^## \[/ && !done {
-    print "## [" v "] — " d "\n\n### Changed\n\n- " n "\n"
+    print "## [" v "]" — " d "\n\n### Changed\n\n- " n "\n"
     done=1
   }
   { print }
