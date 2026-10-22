@@ -32,7 +32,7 @@ from colruyt import (
 )
 from session_store import SessionStore, extract_session_cookie
 
-APP_VERSION = "1.0.1"
+APP_VERSION = "1.0.2"
 DATA_DIR = Path(os.environ.get("DATA_DIR", "/data"))
 OPTIONS_FILE = DATA_DIR / "options.json"
 INDEX_FILE = Path(__file__).parent / "static" / "index.html"
@@ -237,7 +237,7 @@ class AddItemsIn(BaseModel):
 
 
 @app.post("/api/list/items")
-async def add_item(body: AddItemIn) -> dict[str, Any]:
+async def add_item(body: AddItemsIn) -> dict[str, Any]:
     """Add one or more items. Also usable from HASS automations:
 
     rest_command example payload: {"items": [{"description": "Melk", "quantity": 2}]}
