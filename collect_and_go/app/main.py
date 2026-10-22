@@ -32,7 +32,7 @@ from colruyt import (
 )
 from session_store import SessionStore, extract_session_cookie
 
-APP_VERSION = "1.0.4"
+APP_VERSION = "1.1.0"
 DATA_DIR = Path(os.environ.get("DATA_DIR", "/data"))
 OPTIONS_FILE = DATA_DIR / "options.json"
 INDEX_FILE = Path(__file__).parent / "static" / "index.html"
@@ -268,6 +268,50 @@ async def remove_item(item_id: str) -> dict[str, Any]:
     ok = await get_client().remove_item(item_id)
     CACHE.invalidate("list")
     return {"removed": ok}
+
+
+# ---------------------------------------------------------------------------
+# named lists (Collect&Go "mijnlijstjes")
+# ---------------------------------------------------------------------------
+
+@app.get("/api/lists")
+async def named_lists() -> dict[str, Any]:
+    cached = CACHE.get("lists", 60.0)
+    if cached is not None:
+        return {"lists": cached}
+    try:
+        lists = await get_client().get_lists()
+    except ColruytError:
+        lists = []
+    CACHE.set("lists", lists)
+    return {"lists": lists}
+
+
+class AddToNamedListIn(BaseModel):
+    list_id: str = Field(min_length=1)
+    product_ids: list[str] = Field(min_length=1)
+
+
+@app.post("/api/lists/items")
+async def add_to_named_list(body: AddToNamedListIn) -> dict[str, Any]:
+    ok = await get_client().add_products_to_named_list(body.list_id, body.product_ids)
+    return {"added": ok, "list_id": body.list_id}
+
+
+# ---------------------------------------------------------------------------
+# cart (best effort — WCS backend may reject a bare session, the UI falls
+# back to the shopping list in that case)
+# ---------------------------------------------------------------------------
+
+class AddToCartIn(BaseModel):
+    product_id: str = Field(min_length=1)
+    quantity: int = Field(default=1, ge=1, le=99)
+
+
+@app.post("/api/cart/items")
+async def add_to_cart(body: AddToCartIn) -> dict[str, Any]:
+    result = await get_client().add_to_cart(body.product_id, body.quantity)
+    return {"added": True, "result": result}
 
 
 # ---------------------------------------------------------------------------
