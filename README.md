@@ -73,6 +73,46 @@ rest_command:
 > The hostname above works when the add-on exposes port `8099` on the
 > *Network* section of the add-on page (or use the ingress URL).
 
+## Contributing / local development
+
+You don't need a Home Assistant instance to hack on this add-on — it runs
+standalone. The only requirement is [`just`](https://just.systems)
+(`sudo apt install just` / `brew install just` / `snap install just`) plus
+Python 3.12+ and optionally Docker.
+
+```bash
+just            # list all available tasks
+just setup      # one-time: create .venv and install dependencies
+just run        # run the app at http://127.0.0.1:8099 (no Docker)
+just dev        # same, but with auto-reload on code changes
+just check      # syntax-check Python + validate YAML manifests
+just docker-run # build & run the real add-on image (closest to HASS)
+just docker-stop
+```
+
+Data (your session, options) is stored in `/tmp/cg-data` for `just run`/
+`just dev` and in `./.dev-data` for `just docker-run` — both git-ignored.
+To simulate add-on options locally, write an `options.json` there, e.g.:
+
+```json
+{"place_id": "7531", "language": "nl"}
+```
+
+### Testing with your Xtra account
+
+Open http://127.0.0.1:8099, paste your `clpbff_session` cookie (see
+[DOCS.md](collect_and_go/DOCS.md)) and use the UI as you would in HASS.
+
+### Releasing a new version
+
+```bash
+just release patch "Short description of the fix"
+```
+
+This bumps `config.yaml` + `APP_VERSION`, prepends to
+[CHANGELOG.md](collect_and_go/CHANGELOG.md), commits, tags and pushes.
+Use `minor`/`major` for features/breaking changes.
+
 ## Credits
 
 API knowledge reverse-engineered from the Colruyt/Collect&Go web apps, with
