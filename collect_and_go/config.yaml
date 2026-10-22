@@ -5,7 +5,7 @@ description: >-
   Share one Colruyt Collect&Go / Xtra shopping list with your household.
   Search the Colruyt assortment, add and remove products together, straight
   from the Home Assistant sidebar.
-url: https://github.com/YOUR_GITHUB_USERNAME/ha-collect-and-go
+url: https://github.com/oelegeirnaert/ha-collect-and-go
 arch:
   - aarch64
   - amd64
