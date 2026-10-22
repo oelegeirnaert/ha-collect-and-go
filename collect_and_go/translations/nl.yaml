@@ -1,0 +1,18 @@
+configuration:
+  place_id:
+    name: Winkel-ID (placeId)
+    description: >-
+      Numerieke id van je Colruyt-winkel. Wordt gebruikt voor
+      winkelspecifieke prijzen en beschikbaarheid. De standaardwaarde werkt
+      prima om te zoeken; zie het tabblad Documentatie om je eigen
+      winkel-id te vinden.
+  language:
+    name: Producttaal
+    description: Taal voor productnamen en zoekresultaten.
+  session_cookie:
+    name: Xtra-sessiecookie (optioneel)
+    description: >-
+      De clpbff_session-cookiewaarde van je Xtra-account. Normaal koppel je
+      via het add-onpaneel — vul dit alleen in als je de configuratie liever
+      hier beheert. Een sessie die via het paneel is opgeslagen heeft
+      voorrang.

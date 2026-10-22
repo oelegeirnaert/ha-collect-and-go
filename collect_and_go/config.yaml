@@ -1,0 +1,33 @@
+name: Collect & Go — Shared Shopping List
+version: "1.0.0"
+slug: collect_and_go
+description: >-
+  Share one Colruyt Collect&Go / Xtra shopping list with your household.
+  Search the Colruyt assortment, add and remove products together, straight
+  from the Home Assistant sidebar.
+url: https://github.com/YOUR_GITHUB_USERNAME/ha-collect-and-go
+arch:
+  - aarch64
+  - amd64
+  - armv7
+startup: application
+boot: auto
+init: false
+ingress: true
+ingress_port: 8099
+panel_icon: mdi:cart-outline
+panel_title: Collect & Go
+ports:
+  8099/tcp: null
+ports_description:
+  8099/tcp: >-
+    Optional direct access to the web UI and REST API (e.g. for
+    rest_command automations). Leave disabled to use ingress only.
+options:
+  place_id: "2643"
+  language: nl
+  session_cookie: ""
+schema:
+  place_id: str
+  language: list(nl|fr)
+  session_cookie: password

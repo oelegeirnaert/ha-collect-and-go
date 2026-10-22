@@ -1,0 +1,16 @@
+configuration:
+  place_id:
+    name: Store ID (placeId)
+    description: >-
+      Numeric id of your Colruyt store. It is used for store-specific
+      pricing and availability. The default works fine for searching; see
+      the Documentation tab for how to find your own store id.
+  language:
+    name: Product language
+    description: Language used for product names and search results.
+  session_cookie:
+    name: Xtra session cookie (optional)
+    description: >-
+      The clpbff_session cookie value of your Xtra account. Normally you
+      connect via the add-on panel instead — only fill this in if you prefer
+      configuration-as-code. A session saved in the panel takes precedence.

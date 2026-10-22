@@ -1,0 +1,586 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Collect &amp; Go — shared list</title>
+<style>
+  :root {
+    --cg-red: #e30613;
+    --cg-dark: #1b1f2a;
+    --bg: #f3f4f7;
+    --card: #ffffff;
+    --text: #1b1f2a;
+    --muted: #6b7280;
+    --line: #e5e7eb;
+    --ok: #16a34a;
+    --warn: #d97706;
+    --err: #dc2626;
+    --accent: var(--cg-red);
+    --shadow: 0 1px 3px rgba(16, 24, 40, .08);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #111318;
+      --card: #1c1f26;
+      --text: #e5e7eb;
+      --muted: #9ca3af;
+      --line: #2c313c;
+      --shadow: 0 1px 3px rgba(0, 0, 0, .4);
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    min-height: 100vh;
+  }
+  header {
+    position: sticky; top: 0; z-index: 10;
+    display: flex; align-items: center; gap: 10px;
+    padding: 10px 16px;
+    background: var(--cg-red); color: #fff;
+    box-shadow: var(--shadow);
+  }
+  header .logo { font-size: 20px; }
+  header h1 { font-size: 16px; font-weight: 700; margin: 0; flex: 0 0 auto; }
+  header .spacer { flex: 1 1 auto; }
+  header select, header button, header a.cart-link {
+    background: rgba(255,255,255,.15); color: #fff; border: 1px solid rgba(255,255,255,.35);
+    border-radius: 8px; padding: 6px 10px; font-size: 13px; cursor: pointer;
+    text-decoration: none; display: inline-flex; align-items: center; gap: 6px;
+  }
+  header select option { color: #111; }
+  header button:hover, header a.cart-link:hover { background: rgba(255,255,255,.28); }
+  .status { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: #9ca3af; display: inline-block; }
+  .dot.ok { background: #4ade80; } .dot.err { background: #fbbf24; } .dot.off { background: #d1d5db; }
+
+  main { max-width: 1080px; margin: 0 auto; padding: 16px; }
+  section.card {
+    background: var(--card); border: 1px solid var(--line); border-radius: 12px;
+    box-shadow: var(--shadow); padding: 18px; margin-bottom: 16px;
+  }
+  section.card h2 { margin: 0 0 8px; font-size: 17px; }
+  .muted { color: var(--muted); }
+  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+
+  textarea {
+    width: 100%; min-height: 72px; resize: vertical;
+    border: 1px solid var(--line); border-radius: 8px; padding: 10px;
+    background: var(--bg); color: var(--text); font: 13px/1.4 ui-monospace, monospace;
+  }
+  input[type="search"], input[type="text"] {
+    width: 100%; border: 1px solid var(--line); border-radius: 10px;
+    padding: 12px 14px; font-size: 15px; background: var(--card); color: var(--text);
+  }
+  button.primary {
+    background: var(--accent); color: #fff; border: none; border-radius: 8px;
+    padding: 10px 16px; font-size: 14px; font-weight: 600; cursor: pointer;
+  }
+  button.primary:disabled { opacity: .6; cursor: default; }
+  button.ghost {
+    background: transparent; color: var(--text); border: 1px solid var(--line);
+    border-radius: 8px; padding: 8px 12px; cursor: pointer;
+  }
+  button.ghost:hover { background: var(--bg); }
+
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(165px, 1fr)); gap: 10px; }
+  .product {
+    background: var(--card); border: 1px solid var(--line); border-radius: 10px;
+    padding: 10px; display: flex; flex-direction: column; gap: 6px; box-shadow: var(--shadow);
+  }
+  .product img { width: 100%; height: 110px; object-fit: contain; background: #fff; border-radius: 6px; }
+  .product .name { font-size: 13px; font-weight: 600; min-height: 34px; }
+  .product .meta { font-size: 12px; color: var(--muted); }
+  .product .price { font-size: 14px; font-weight: 700; }
+  .product .unitprice { font-size: 11px; color: var(--muted); }
+  .qty { display: flex; align-items: center; gap: 6px; }
+  .qty button {
+    width: 26px; height: 26px; border-radius: 6px; border: 1px solid var(--line);
+    background: var(--bg); color: var(--text); font-weight: 700; cursor: pointer;
+  }
+  .qty span { min-width: 20px; text-align: center; font-weight: 600; }
+  .product button.add {
+    background: var(--accent); color: #fff; border: none; border-radius: 8px;
+    padding: 7px 10px; font-weight: 600; cursor: pointer;
+  }
+  .product button.add:disabled { opacity: .5; }
+
+  ul#list { list-style: none; margin: 0; padding: 0; }
+  ul#list li {
+    display: flex; align-items: center; gap: 10px;
+    padding: 10px 4px; border-bottom: 1px solid var(--line);
+  }
+  ul#list li:last-child { border-bottom: none; }
+  ul#list li.done .desc { text-decoration: line-through; color: var(--muted); }
+  ul#list .desc { flex: 1 1 auto; }
+  ul#list .q {
+    background: var(--bg); border: 1px solid var(--line); border-radius: 999px;
+    padding: 2px 10px; font-size: 12px; font-weight: 700;
+  }
+  ul#list button.del {
+    border: none; background: transparent; cursor: pointer; font-size: 16px;
+    color: var(--muted); padding: 4px 6px; border-radius: 6px;
+  }
+  ul#list button.del:hover { color: var(--err); background: var(--bg); }
+
+  .banner {
+    border-radius: 10px; padding: 10px 14px; margin-bottom: 12px; font-size: 13px;
+    border: 1px solid;
+  }
+  .banner.warn { background: #fff7ed; color: #9a3412; border-color: #fdba74; }
+  @media (prefers-color-scheme: dark) { .banner.warn { background: #3a2a17; color: #fdba74; } }
+
+  #toast {
+    position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%);
+    background: var(--cg-dark); color: #fff; padding: 10px 18px; border-radius: 10px;
+    box-shadow: var(--shadow); opacity: 0; pointer-events: none; transition: opacity .2s;
+    max-width: 90vw; z-index: 50;
+  }
+  #toast.show { opacity: .96; }
+  .hidden { display: none !important; }
+  .section-title { display: flex; align-items: center; gap: 8px; margin: 4px 0 10px; }
+  .section-title h2 { margin: 0; font-size: 16px; flex: 1 1 auto; }
+  .count-badge {
+    background: var(--accent); color: #fff; border-radius: 999px;
+    font-size: 12px; font-weight: 700; padding: 2px 9px;
+  }
+  ol.steps { padding-left: 20px; } ol.steps li { margin-bottom: 6px; }
+  code { background: var(--bg); border: 1px solid var(--line); border-radius: 5px; padding: 1px 5px; }
+</style>
+</head>
+<body>
+<header>
+  <span class="logo">🛒</span>
+  <h1>Collect &amp; Go</h1>
+  <span class="status"><span id="status-dot" class="dot off"></span><span id="status-text">…</span></span>
+  <span class="spacer"></span>
+  <select id="ui-lang" title="Language">
+    <option value="en">EN</option>
+    <option value="nl">NL</option>
+    <option value="fr">FR</option>
+  </select>
+  <a id="cart-link" class="cart-link hidden" href="#" target="_blank" rel="noopener noreferrer">🧺 <span data-i18n="open_cart">Cart</span></a>
+  <button id="disconnect-btn" class="hidden" data-i18n-title="disconnect" title="Disconnect">⏻</button>
+</header>
+
+<main>
+  <div id="expired-banner" class="banner warn hidden" data-i18n="expired_banner"></div>
+
+  <!-- session setup -->
+  <section id="setup-card" class="card hidden">
+    <h2 data-i18n="connect_title">Connect your Xtra account</h2>
+    <p class="muted" data-i18n="connect_intro"></p>
+    <ol class="steps">
+      <li data-i18n-html="step1"></li>
+      <li data-i18n-html="step2"></li>
+      <li data-i18n-html="step3"></li>
+      <li data-i18n-html="step4"></li>
+    </ol>
+    <textarea id="cookie-input" placeholder="clpbff_session=…"></textarea>
+    <div class="row" style="margin-top:10px">
+      <button id="save-session" class="primary" data-i18n="save">Save &amp; connect</button>
+      <span id="save-status" class="muted"></span>
+    </div>
+  </section>
+
+  <!-- main view -->
+  <section id="main-view" class="hidden">
+    <div class="card">
+      <input id="search" type="search" data-i18n-ph="search_placeholder" autocomplete="off">
+      <div class="row" style="margin-top:8px">
+        <input id="free-text" type="text" data-i18n-ph="free_placeholder" style="flex:1; min-width:180px">
+        <button id="free-add" class="ghost" data-i18n="free_add">Add text</button>
+      </div>
+    </div>
+
+    <div id="results-wrap" class="hidden">
+      <div class="section-title"><h2 data-i18n="results">Results</h2><span id="results-count" class="muted"></span></div>
+      <div id="results" class="grid"></div>
+    </div>
+
+    <div id="most-bought-wrap" class="hidden">
+      <div class="section-title"><h2 data-i18n="most_bought">Frequently bought</h2></div>
+      <div id="most-bought" class="grid"></div>
+    </div>
+
+    <div class="card">
+      <div class="section-title">
+        <h2 data-i18n="list_title">Shopping list</h2>
+        <span id="list-count" class="count-badge">0</span>
+        <button id="refresh" class="ghost" data-i18n="refresh">Refresh</button>
+      </div>
+      <ul id="list"></ul>
+      <p id="empty-list" class="muted hidden" data-i18n="empty_list"></p>
+      <p id="list-updated" class="muted" style="font-size:11px; margin:8px 0 0"></p>
+    </div>
+  </section>
+</main>
+
+<div id="toast"></div>
+
+<script>
+"use strict";
+/* ---------------------------------------------------------------- i18n -- */
+const I18N = {
+  en: {
+    connect_title: "Connect your Xtra account",
+    connect_intro: "The add-on uses your Xtra session to reach your shared Collect&Go list. Your password is never stored — only the session cookie, kept inside Home Assistant.",
+    step1: 'Open <a href="https://www.colruyt.be" target="_blank" rel="noopener">colruyt.be</a> in a new tab and log in to your Xtra account (SMS code as usual).',
+    step2: "Still on colruyt.be, open the developer tools (<b>F12</b>) → tab <b>Application</b> (Chrome) or <b>Storage</b> (Firefox) → <b>Cookies</b> → <code>https://www.colruyt.be</code>.",
+    step3: "Find the cookie named <code>clpbff_session</code> and copy its <b>value</b> (an UUID like <code>61c33aee-…</code>).",
+    step4: "Paste it below and save. When the session expires one day, the add-on will tell you and you repeat these steps.",
+    save: "Save & connect", disconnect: "Disconnect session",
+    checking: "checking…", connected: "connected", not_connected: "not connected", expired: "session expired",
+    expired_banner: "Your Xtra session expired or is invalid. Reconnect below (takes 30 seconds).",
+    search_placeholder: "Search products (e.g. melk, lasagne, toiletpapier)…",
+    free_placeholder: "Or add a free-text item (e.g. “batteries”)", free_add: "Add text",
+    results: "Results", most_bought: "Frequently bought",
+    list_title: "Shopping list", refresh: "Refresh",
+    empty_list: "The list is empty. Search above to add something tasty.",
+    open_cart: "Open cart", add: "Add", added: "added ✓",
+    rate_limited: "Colruyt is rate-limiting us — wait a few seconds and retry.",
+    auth_lost: "Session no longer valid — please reconnect.",
+    error_generic: "Something went wrong",
+    remove_title: "Remove from list",
+    updated_at: "Updated",
+    session_saved: "Session saved — connected!",
+    session_rejected: "Colruyt rejected that session. Did you copy the full value?",
+    items: "items",
+  },
+  nl: {
+    connect_title: "Koppel je Xtra-account",
+    connect_intro: "De add-on gebruikt je Xtra-sessie om bij jullie gedeelde Collect&Go-lijstje te kunnen. Je wachtwoord wordt nooit bewaard — enkel de sessiecookie, veilig binnen Home Assistant.",
+    step1: 'Open <a href="https://www.colruyt.be" target="_blank" rel="noopener">colruyt.be</a> in een nieuw tabblad en meld aan met je Xtra-account (sms-code zoals gewoonlijk).',
+    step2: "Open op colruyt.be de ontwikkelaarstools (<b>F12</b>) → tabblad <b>Application</b> (Chrome) of <b>Opslag</b> (Firefox) → <b>Cookies</b> → <code>https://www.colruyt.be</code>.",
+    step3: "Zoek de cookie <code>clpbff_session</code> en kopieer de <b>waarde</b> (een UUID zoals <code>61c33aee-…</code>).",
+    step4: "Plak ze hieronder en bewaar. Als de sessie ooit vervalt, laat de add-on dat weten en herhaal je gewoon deze stappen.",
+    save: "Bewaar & koppel", disconnect: "Verbreek sessie",
+    checking: "controleren…", connected: "gekoppeld", not_connected: "niet gekoppeld", expired: "sessie verlopen",
+    expired_banner: "Je Xtra-sessie is verlopen of ongeldig. Koppel hieronder opnieuw (30 seconden werk).",
+    search_placeholder: "Zoek producten (bv. melk, lasagne, toiletpapier)…",
+    free_placeholder: "Of voeg een vrije tekst toe (bv. “batterijen”)", free_add: "Voeg toe",
+    results: "Resultaten", most_bought: "Vaak gekocht",
+    list_title: "Boodschappenlijstje", refresh: "Vernieuw",
+    empty_list: "Het lijstje is leeg. Zoek hierboven om iets lekkers toe te voegen.",
+    open_cart: "Naar winkelmand", add: "Voeg toe", added: "toegevoegd ✓",
+    rate_limited: "Colruyt remt ons even af — wacht enkele seconden en probeer opnieuw.",
+    auth_lost: "Sessie niet meer geldig — koppel opnieuw.",
+    error_generic: "Er ging iets mis",
+    remove_title: "Verwijder van lijstje",
+    updated_at: "Bijgewerkt",
+    session_saved: "Sessie bewaard — gekoppeld!",
+    session_rejected: "Colruyt aanvaardde die sessie niet. Heb je de volledige waarde gekopieerd?",
+    items: "items",
+  },
+  fr: {
+    connect_title: "Connectez votre compte Xtra",
+    connect_intro: "L'add-on utilise votre session Xtra pour accéder à votre liste Collect&Go partagée. Votre mot de passe n'est jamais enregistré — uniquement le cookie de session, conservé dans Home Assistant.",
+    step1: 'Ouvrez <a href="https://www.colruyt.be" target="_blank" rel="noopener">colruyt.be</a> dans un nouvel onglet et connectez-vous (code SMS comme d’habitude).',
+    step2: "Sur colruyt.be, ouvrez les outils développeur (<b>F12</b>) → onglet <b>Application</b> (Chrome) ou <b>Stockage</b> (Firefox) → <b>Cookies</b> → <code>https://www.colruyt.be</code>.",
+    step3: "Trouvez le cookie <code>clpbff_session</code> et copiez sa <b>valeur</b> (un UUID du type <code>61c33aee-…</code>).",
+    step4: "Collez-la ci-dessous et enregistrez. Si la session expire un jour, l'add-on vous prévient et vous refaites ces étapes.",
+    save: "Enregistrer & connecter", disconnect: "Déconnecter",
+    checking: "vérification…", connected: "connecté", not_connected: "non connecté", expired: "session expirée",
+    expired_banner: "Votre session Xtra a expiré ou est invalide. Reconnectez-vous ci-dessous (30 secondes).",
+    search_placeholder: "Chercher des produits (p.ex. lait, lasagne, papier toilette)…",
+    free_placeholder: "Ou ajoutez un article libre (p.ex. « piles »)", free_add: "Ajouter",
+    results: "Résultats", most_bought: "Achetés souvent",
+    list_title: "Liste de courses", refresh: "Rafraîchir",
+    empty_list: "La liste est vide. Cherchez ci-dessus pour ajouter quelque chose de bon.",
+    open_cart: "Ouvrir le chariot", add: "Ajouter", added: "ajouté ✓",
+    rate_limited: "Colruyt nous limite — patientez quelques secondes et réessayez.",
+    auth_lost: "Session expirée — reconnectez-vous.",
+    error_generic: "Quelque chose a raté",
+    remove_title: "Retirer de la liste",
+    updated_at: "Mis à jour",
+    session_saved: "Session enregistrée — connecté !",
+    session_rejected: "Colruyt a refusé cette session. Avez-vous copié toute la valeur ?",
+    items: "articles",
+  },
+};
+
+let uiLang = localStorage.getItem("cg-ui-lang") || "en";
+let state = null;
+let refreshTimer = null;
+
+const $ = (s) => document.querySelector(s);
+
+function t(k) { return (I18N[uiLang] && I18N[uiLang][k]) || I18N.en[k] || k; }
+
+function applyI18n() {
+  document.querySelectorAll("[data-i18n]").forEach((el) => { el.textContent = t(el.dataset.i18n); });
+  document.querySelectorAll("[data-i18n-html]").forEach((el) => { el.innerHTML = t(el.dataset.i18nHtml); });
+  document.querySelectorAll("[data-i18n-ph]").forEach((el) => { el.placeholder = t(el.dataset.i18nPh); });
+  document.querySelectorAll("[data-i18n-title]").forEach((el) => { el.title = t(el.dataset.i18nTitle); });
+}
+
+function toast(msg) {
+  const el = $("#toast");
+  el.textContent = msg;
+  el.classList.add("show");
+  clearTimeout(el._t);
+  el._t = setTimeout(() => el.classList.remove("show"), 3500);
+}
+
+/* ----------------------------------------------------------------- api -- */
+async function api(path, opts = {}) {
+  const res = await fetch("api/" + path, {
+    headers: { "Content-Type": "application/json" },
+    ...opts,
+  });
+  if (res.status === 401) { const e = new Error("auth"); e.code = "auth"; throw e; }
+  if (res.status === 429) { const e = new Error("rate"); e.code = "rate"; throw e; }
+  if (!res.ok) {
+    let msg = res.statusText;
+    try { msg = (await res.json()).detail || msg; } catch (_) {}
+    const e = new Error(msg); e.code = "http"; throw e;
+  }
+  return res.json();
+}
+
+function handleError(e) {
+  if (e.code === "auth") { setStatus("err", t("expired")); showSetup(true); toast(t("auth_lost")); }
+  else if (e.code === "rate") { toast(t("rate_limited")); }
+  else { toast(t("error_generic") + (e.message ? ": " + e.message : "")); }
+}
+
+/* --------------------------------------------------------------- render -- */
+function setStatus(kind, text) {
+  $("#status-dot").className = "dot " + (kind || "off");
+  $("#status-text").textContent = text;
+}
+
+function showSetup(expired) {
+  $("#setup-card").classList.remove("hidden");
+  $("#main-view").classList.add("hidden");
+  $("#expired-banner").classList.toggle("hidden", !expired);
+  $("#disconnect-btn").classList.add("hidden");
+  if (refreshTimer) { clearInterval(refreshTimer); refreshTimer = null; }
+}
+
+function showMain() {
+  $("#setup-card").classList.add("hidden");
+  $("#main-view").classList.remove("hidden");
+  $("#expired-banner").classList.add("hidden");
+  $("#disconnect-btn").classList.remove("hidden");
+  $("#cart-link").classList.remove("hidden");
+  if (state && state.cart_url) $("#cart-link").href = state.cart_url;
+  if (!refreshTimer) {
+    refreshTimer = setInterval(() => { if (document.visibilityState === "visible") loadList(true); }, 20000);
+  }
+}
+
+function fmtPrice(v) {
+  if (v === null || v === undefined) return "";
+  return "€ " + Number(v).toFixed(2).replace(".", ",");
+}
+
+function productCard(p) {
+  const card = document.createElement("div");
+  card.className = "product";
+  const img = document.createElement("img");
+  img.loading = "lazy"; img.src = p.image || ""; img.alt = "";
+  img.onerror = () => { img.style.display = "none"; };
+  card.appendChild(img);
+
+  const name = document.createElement("div");
+  name.className = "name"; name.textContent = p.name;
+  card.appendChild(name);
+
+  const meta = document.createElement("div");
+  meta.className = "meta";
+  meta.textContent = [p.brand, p.content].filter(Boolean).join(" · ");
+  card.appendChild(meta);
+
+  const price = document.createElement("div");
+  price.className = "price"; price.textContent = fmtPrice(p.price);
+  card.appendChild(price);
+
+  if (p.unit_price && p.unit) {
+    const up = document.createElement("div");
+    up.className = "unitprice";
+    up.textContent = fmtPrice(p.unit_price) + " /" + p.unit;
+    card.appendChild(up);
+  }
+
+  const row = document.createElement("div");
+  row.className = "row";
+  row.style.justifyContent = "space-between";
+
+  const qty = document.createElement("div");
+  qty.className = "qty";
+  const minus = document.createElement("button"); minus.textContent = "−";
+  const val = document.createElement("span"); val.textContent = "1";
+  const plus = document.createElement("button"); plus.textContent = "+";
+  minus.onclick = () => { val.textContent = Math.max(1, parseInt(val.textContent, 10) - 1); };
+  plus.onclick = () => { val.textContent = Math.min(99, parseInt(val.textContent, 10) + 1); };
+  qty.append(minus, val, plus);
+
+  const add = document.createElement("button");
+  add.className = "add"; add.textContent = t("add");
+  add.onclick = async () => {
+    add.disabled = true;
+    try {
+      await addItem({ product_id: p.product_id, description: p.short_name || p.name, quantity: parseInt(val.textContent, 10) });
+      add.textContent = t("added");
+      setTimeout(() => { add.textContent = t("add"); add.disabled = false; }, 1200);
+    } catch (e) { add.disabled = false; handleError(e); }
+  };
+  row.append(qty, add);
+  card.appendChild(row);
+  return card;
+}
+
+function renderProducts(el, wrap, products) {
+  el.innerHTML = "";
+  products.forEach((p) => el.appendChild(productCard(p)));
+  wrap.classList.toggle("hidden", products.length === 0);
+}
+
+function renderList(items) {
+  const ul = $("#list");
+  ul.innerHTML = "";
+  items.forEach((it) => {
+    const li = document.createElement("li");
+    if (it.completed) li.className = "done";
+    const desc = document.createElement("span");
+    desc.className = "desc";
+    desc.textContent = (it.completed ? "✓ " : "") + it.description;
+    const q = document.createElement("span");
+    q.className = "q"; q.textContent = "×" + (it.quantity || 1);
+    const del = document.createElement("button");
+    del.className = "del"; del.title = t("remove_title"); del.textContent = "🗑";
+    del.onclick = async () => {
+      del.disabled = true;
+      try { await api("list/items/" + encodeURIComponent(it.id), { method: "DELETE" }); await loadList(true); }
+      catch (e) { del.disabled = false; handleError(e); }
+    };
+    li.append(desc, q, del);
+    ul.appendChild(li);
+  });
+  $("#list-count").textContent = items.length;
+  $("#empty-list").classList.toggle("hidden", items.length > 0);
+  $("#list-updated").textContent = t("updated_at") + " " + new Date().toLocaleTimeString();
+}
+
+/* ----------------------------------------------------------------- flow -- */
+async function loadList(silent) {
+  try {
+    const data = await api("list" + (silent ? "" : "?force=true"));
+    renderList(data.items || []);
+  } catch (e) { if (!silent) handleError(e); else if (e.code === "auth") handleError(e); }
+}
+
+async function loadMostBought() {
+  try {
+    const data = await api("most-bought");
+    renderProducts($("#most-bought"), $("#most-bought-wrap"), data.products || []);
+  } catch (e) { /* optional section — stay hidden */ }
+}
+
+async function addItem(item) {
+  const data = await api("list/items", {
+    method: "POST",
+    body: JSON.stringify({ items: [item] }),
+  });
+  renderList(data.items || []);
+}
+
+let searchTimer = null;
+function onSearchInput() {
+  clearTimeout(searchTimer);
+  const q = $("#search").value.trim();
+  if (q.length < 2) {
+    $("#results-wrap").classList.add("hidden");
+    $("#most-bought-wrap").classList.remove("hidden");
+    return;
+  }
+  searchTimer = setTimeout(async () => {
+    try {
+      const data = await api("search?q=" + encodeURIComponent(q));
+      renderProducts($("#results"), $("#results-wrap"), data.products || []);
+      $("#results-count").textContent = data.total ? data.total + " " + t("items") : "";
+      $("#most-bought-wrap").classList.add("hidden");
+    } catch (e) { handleError(e); }
+  }, 350);
+}
+
+async function connect() {
+  const btn = $("#save-session");
+  btn.disabled = true;
+  $("#save-status").textContent = t("checking");
+  try {
+    await api("session", { method: "POST", body: JSON.stringify({ cookie: $("#cookie-input").value }) });
+    $("#cookie-input").value = "";
+    $("#save-status").textContent = "";
+    toast(t("session_saved"));
+    await boot(true);
+  } catch (e) {
+    $("#save-status").textContent = e.code === "auth" ? t("session_rejected") : (e.message || t("error_generic"));
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function boot(skipState) {
+  if (!skipState) {
+    try { state = await api("state"); } catch (e) { state = null; }
+    if (state && state.language && !localStorage.getItem("cg-ui-lang")) {
+      uiLang = state.language === "fr" ? "fr" : (state.language === "nl" ? "nl" : "en");
+      $("#ui-lang").value = uiLang;
+      applyI18n();
+    }
+    if (state && state.cart_url) $("#cart-link").href = state.cart_url;
+  }
+  if (!state || !state.configured) {
+    setStatus("off", t("not_connected"));
+    showSetup(false);
+    return;
+  }
+  setStatus("off", t("checking"));
+  try {
+    const check = await api("session/check");
+    if (!check.valid) { setStatus("err", t("expired")); showSetup(true); return; }
+  } catch (e) { handleError(e); return; }
+  setStatus("ok", t("connected"));
+  showMain();
+  await loadList(true);
+  loadMostBought();
+}
+
+/* ----------------------------------------------------------------- init -- */
+document.addEventListener("DOMContentLoaded", () => {
+  $("#ui-lang").value = uiLang;
+  $("#ui-lang").onchange = () => {
+    uiLang = $("#ui-lang").value;
+    localStorage.setItem("cg-ui-lang", uiLang);
+    applyI18n();
+  };
+  $("#search").addEventListener("input", onSearchInput);
+  $("#save-session").onclick = connect;
+  $("#refresh").onclick = () => loadList(false);
+  $("#disconnect-btn").onclick = async () => {
+    try { await api("session", { method: "DELETE" }); } catch (_) {}
+    setStatus("off", t("not_connected"));
+    showSetup(false);
+  };
+  $("#free-add").onclick = async () => {
+    const v = $("#free-text").value.trim();
+    if (!v) return;
+    try { await addItem({ description: v }); $("#free-text").value = ""; }
+    catch (e) { handleError(e); }
+  };
+  $("#free-text").addEventListener("keydown", (ev) => { if (ev.key === "Enter") $("#free-add").click(); });
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible" && !$("#main-view").classList.contains("hidden")) loadList(true);
+  });
+  applyI18n();
+  boot(false);
+});
+</script>
+</body>
+</html>
