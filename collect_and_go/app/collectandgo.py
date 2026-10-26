@@ -142,14 +142,23 @@ def _first_number(*values: Any) -> Optional[float]:
 
 
 def _wcs_price(prices: Any) -> Optional[float]:
-    """WCS returns price as a list like [{'usage': 'Display', 'value': '2.59'}]."""
+    """WCS price shapes:
+
+    * search ``price``: ``[{'usage': 'Display', 'value': '2.59'}, …]``
+    * byId ``xprice``: ``[{'basePrice': '2,27', 'basePriceVol': '2,27', …}]``
+    """
     if not isinstance(prices, list):
         return _first_number(prices)
     preferred = None
     for entry in prices:
         if not isinstance(entry, dict):
             continue
-        value = _first_number(entry.get("value"), entry.get("price"))
+        value = _first_number(
+            entry.get("value"),
+            entry.get("price"),
+            entry.get("basePrice"),
+            entry.get("basePriceVol"),
+        )
         if value is None:
             continue
         if entry.get("usage") == "Display":
@@ -191,7 +200,7 @@ def normalize_product(p: dict[str, Any]) -> dict[str, Any]:
         "brand": _first_str(p.get("manufacturer"), p.get("brand")),
         "content": _first_str(p.get("content"), p.get("packaging")),
         "image": _wcs_image(_first_str(p.get("thumbnail"), p.get("fullImage"))),
-        "price": _wcs_price(p.get("price")),
+        "price": _wcs_price(p.get("price") if p.get("price") is not None else p.get("xprice")),
         "available": bool(p.get("buyable", p.get("available", True))),
     }
 
@@ -202,7 +211,9 @@ def normalize_cart_item(i: dict[str, Any]) -> dict[str, Any]:
     quantity = _first_number(i.get("quantity"))
     return {
         "id": _first_str(i.get("orderItemId"), i.get("itemId")),
-        "product_id": _first_str(i.get("partNumber"), str(i.get("productId") or "")),
+        # The cart line's numeric partNumber = the product's uniqueID.
+        "entry_id": _first_str(i.get("partNumber"), str(i.get("catEntryId") or "")),
+        "product_id": _first_str(str(i.get("productId") or ""), i.get("partNumber")),
         "description": _first_str(
             i.get("productName"),
             i.get("description"),
@@ -213,6 +224,8 @@ def normalize_cart_item(i: dict[str, Any]) -> dict[str, Any]:
         "price": _first_number(
             i.get("orderItemPrice"), i.get("price"), i.get("unitPrice")
         ),
+        "image": _wcs_image(_first_str(entry.get("thumbnail"), entry.get("fullImage"))),
+        "available": bool(i.get("buyable", True)),
     }
 
 
@@ -392,6 +405,42 @@ class CollectAndGoClient:
                     normalize_product(p) for p in raw if isinstance(p, dict)
                 ],
             }
+
+    async def get_products_by_ids(
+        self, entry_ids: list[str]
+    ) -> dict[str, dict[str, Any]]:
+        """Batch-fetch products by catalog-entry id (numeric ``uniqueID``).
+
+        Used to enrich cart lines (which only carry the numeric partNumber)
+        with a name, image and price. Returns ``{entry_id: product}``.
+        Best-effort: returns what it can, never breaks the cart on failure.
+        """
+        ids = [str(i) for i in entry_ids if i][:50]
+        if not ids:
+            return {}
+        url = f"{SEARCH_URL}/store/{STORE_ID}/productview/byId/{','.join(ids)}"
+        params = {"langId": self._lang_id, "catalogId": CATALOG_ID}
+        try:
+            async with self._client() as client:
+                resp = await client.get(url, params=params)
+                _check_response(resp)
+                data = _json(resp)
+        except CollectAndGoError:
+            return {}
+        raw = []
+        if isinstance(data, dict):
+            raw = data.get("catalogEntryView") or []
+        elif isinstance(data, list):
+            raw = data
+        result: dict[str, dict[str, Any]] = {}
+        for p in raw:
+            if not isinstance(p, dict):
+                continue
+            product = normalize_product(p)
+            key = product.get("entry_id") or _first_str(str(p.get("uniqueID") or ""))
+            if key:
+                result[key] = product
+        return result
 
     # ------------------------------------------------------------------
     # cart ("winkelmand")

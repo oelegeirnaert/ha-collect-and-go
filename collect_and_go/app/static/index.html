@@ -133,12 +133,19 @@
 
   ul#cart-items { list-style: none; margin: 0; padding: 0; }
   ul#cart-items li {
-    display: flex; align-items: center; gap: 10px;
-    padding: 11px 4px; border-bottom: 1px solid var(--line);
+    display: flex; align-items: center; gap: 14px;
+    padding: 12px 4px; border-bottom: 1px solid var(--line);
   }
   ul#cart-items li:last-child { border-bottom: none; }
-  ul#cart-items .desc { flex: 1 1 auto; }
-  ul#cart-items .price { font-weight: 700; white-space: nowrap; color: var(--cg-blue); }
+  ul#cart-items li img {
+    width: 54px; height: 54px; object-fit: contain; flex: 0 0 auto;
+    background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: 4px;
+  }
+  ul#cart-items .desc { flex: 1 1 auto; min-width: 0; }
+  ul#cart-items .desc .nm { font-weight: 600; font-size: 14px; line-height: 1.3; }
+  ul#cart-items .desc .sub { font-size: 12px; color: var(--muted); margin-top: 2px; }
+  ul#cart-items .price { font-weight: 700; white-space: nowrap; color: var(--cg-blue); font-size: 15px; }
+  ul#cart-items .price .per { display: block; font-size: 11px; font-weight: 400; color: var(--muted); text-align: right; }
   @media (prefers-color-scheme: dark) { ul#cart-items .price { color: #9fc0e8; } }
   ul#cart-items button.del {
     border: none; background: transparent; cursor: pointer; font-size: 16px;
@@ -496,9 +503,24 @@ function renderCart(cart) {
   items.forEach((it) => {
     const li = document.createElement("li");
 
-    const desc = document.createElement("span");
+    const img = document.createElement("img");
+    img.loading = "lazy"; img.src = it.image || ""; img.alt = "";
+    img.onerror = () => { img.style.visibility = "hidden"; };
+    if (!it.image) img.style.visibility = "hidden";
+    li.appendChild(img);
+
+    const desc = document.createElement("div");
     desc.className = "desc";
-    desc.textContent = it.description || it.product_id || "?";
+    const nm = document.createElement("div");
+    nm.className = "nm";
+    nm.textContent = it.description || it.product_id || "?";
+    desc.appendChild(nm);
+    if (it.brand || it.content) {
+      const sub = document.createElement("div");
+      sub.className = "sub";
+      sub.textContent = [it.brand, it.content].filter(Boolean).join(" · ");
+      desc.appendChild(sub);
+    }
     li.appendChild(desc);
 
     const qty = document.createElement("div");
@@ -507,15 +529,21 @@ function renderCart(cart) {
     const val = document.createElement("span"); val.textContent = it.quantity || 1;
     const plus = document.createElement("button"); plus.textContent = "+";
     minus.disabled = (it.quantity || 1) <= 1;
-    minus.onclick = () => updateCartItem(it.id, (it.quantity || 1) - 1, minus);
-    plus.onclick = () => updateCartItem(it.id, (it.quantity || 1) + 1, plus);
+    minus.onclick = () => updateCartItem(it.id, (it.quantity || 1) - 1, minus, it);
+    plus.onclick = () => updateCartItem(it.id, (it.quantity || 1) + 1, plus, it);
     qty.append(minus, val, plus);
     li.appendChild(qty);
 
     if (it.price !== null && it.price !== undefined) {
-      const pr = document.createElement("span");
+      const pr = document.createElement("div");
       pr.className = "price";
       pr.textContent = fmtPrice(it.price);
+      if (it.quantity > 1 && it.unit_price) {
+        const per = document.createElement("span");
+        per.className = "per";
+        per.textContent = fmtPrice(it.unit_price) + " /st";
+        pr.appendChild(per);
+      }
       li.appendChild(pr);
     }
 
@@ -552,13 +580,13 @@ async function loadCart(silent) {
   } catch (e) { if (!silent || e.code === "auth") handleError(e); }
 }
 
-async function updateCartItem(orderItemId, quantity, btn) {
+async function updateCartItem(orderItemId, quantity, btn, item) {
   if (quantity < 1) return;
   btn.disabled = true;
   try {
     await api("cart/items/" + encodeURIComponent(orderItemId), {
       method: "PUT",
-      body: JSON.stringify({ quantity }),
+      body: JSON.stringify({ quantity, part_number: item && item.entry_id }),
     });
     await loadCart(true);
   } catch (e) { handleError(e); await loadCart(true); }

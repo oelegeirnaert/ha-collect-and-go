@@ -4,6 +4,18 @@ All notable changes to the Collect & Go add-on. This project follows
 [Semantic Versioning](https://semver.org/): **MAJOR** for breaking changes,
 **MINOR** for new features, **PATCH** for fixes.
 
+## [2.3.0] — 2026-10-26
+
+### Added
+
+- **Richer cart:** cart lines are enriched via a batched
+  `productview/byId` lookup — each line now shows the product **image,
+  name, brand/content and price** (per-unit and line total) instead of a
+  bare product id. New `productview/byId` client method; `xprice` shape
+  (`basePrice`, comma decimals) parsed.
+- Quantity steppers send the line's numeric `partNumber` along (some WCS
+  builds reject updates without it).
+
 ## [2.2.0] — 2026-10-26
 
 ### Changed (breaking)

@@ -35,7 +35,7 @@ from collectandgo import (
 )
 from session_store import SessionStore, extract_session_cookies
 
-APP_VERSION = "2.2.0"
+APP_VERSION = "2.3.0"
 DATA_DIR = Path(os.environ.get("DATA_DIR", "/data"))
 OPTIONS_FILE = DATA_DIR / "options.json"
 INDEX_FILE = Path(__file__).parent / "static" / "index.html"
@@ -154,6 +154,7 @@ class AddToCartIn(BaseModel):
 
 class UpdateCartItemIn(BaseModel):
     quantity: int = Field(ge=1, le=99)
+    part_number: Optional[str] = None
 
 
 class AddToNamedListIn(BaseModel):
@@ -244,14 +245,54 @@ async def session_clear() -> dict[str, bool]:
 
 @app.get("/api/cart")
 async def view_cart(force: bool = False) -> dict[str, Any]:
-    """Live contents of the Collect&Go cart."""
+    """Live contents of the Collect&Go cart.
+
+    Cart lines only carry the numeric partNumber, so we enrich them with the
+    product's name, image and price via a batched catalog lookup
+    (best-effort — a lookup failure never breaks the cart).
+    """
     if not force:
         cached = CACHE.get("cart", CART_CACHE_TTL)
         if cached is not None:
             return {**cached, "cached": True}
     cart = await get_client().get_cart()
+    await _enrich_cart(cart)
     CACHE.set("cart", cart)
     return {**cart, "cached": False}
+
+
+async def _enrich_cart(cart: dict[str, Any]) -> None:
+    """Fill in name/image/price for cart lines that only have an id."""
+    items = cart.get("items") or []
+    # ids that still look "bare" (description is just the partNumber)
+    need = [
+        i.get("entry_id")
+        for i in items
+        if i.get("entry_id") and (not i.get("description") or i.get("description") == i.get("entry_id") or not i.get("image"))
+    ]
+    need = [n for n in dict.fromkeys(need) if n]
+    if not need:
+        return
+    lookup = await get_client().get_products_by_ids(need)
+    if not lookup:
+        return
+    for item in items:
+        product = lookup.get(item.get("entry_id") or "")
+        if not product:
+            continue
+        if not item.get("description") or item["description"] == item.get("entry_id"):
+            item["description"] = product.get("name") or item["description"]
+        if not item.get("image"):
+            item["image"] = product.get("image") or ""
+        item["brand"] = product.get("brand") or ""
+        item["content"] = product.get("content") or ""
+        if item.get("price") is None and product.get("price") is not None:
+            # per-unit catalog price × quantity as a fallback line price
+            item["unit_price"] = product["price"]
+            item["price"] = round(product["price"] * (item.get("quantity") or 1), 2)
+        elif item.get("price") is not None and item.get("quantity"):
+            item["unit_price"] = round(item["price"] / item["quantity"], 2)
+        item["product_id"] = product.get("product_id") or item.get("product_id")
 
 
 @app.post("/api/cart/items")
@@ -271,7 +312,9 @@ async def add_to_cart(body: AddToCartIn) -> dict[str, Any]:
 
 @app.put("/api/cart/items/{order_item_id}")
 async def update_cart_item(order_item_id: str, body: UpdateCartItemIn) -> dict[str, Any]:
-    result = await get_client().update_cart_item(order_item_id, body.quantity)
+    result = await get_client().update_cart_item(
+        order_item_id, body.quantity, part_number=body.part_number
+    )
     CACHE.invalidate("cart")
     return {"updated": True, "result": result}
 
