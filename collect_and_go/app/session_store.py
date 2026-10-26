@@ -70,9 +70,11 @@ class SessionStore:
 def extract_session_cookies(raw: str) -> dict[str, str]:
     """Extract the Collect&Go session cookies from whatever the user pastes:
 
+    * a whole ``curl`` command (DevTools → Copy as cURL) — the ``-b`` /
+      ``--cookie`` / ``--cookie-raw`` value is used;
     * a whole ``Cookie:`` header or ``name=value; name=value`` list
       (e.g. copied from DevTools → Network);
-    * a DevTools cookie-table paste (tab/comma separated, possibly quoted);
+    * a DevTools cookie-table paste (tab separated, possibly quoted);
     * just the ``WC_AUTHENTICATION_…`` cookie name + value;
     * or just the bare ``WC_AUTHENTICATION`` *value* (``<userId>,<token>``).
 
@@ -81,6 +83,10 @@ def extract_session_cookies(raw: str) -> dict[str, str]:
     raw = (raw or "").strip()
     if not raw:
         return {}
+
+    # Whole curl command? Pull out the cookie flag's value first.
+    if "curl" in raw.lower():
+        raw = _cookies_from_curl(raw)
 
     found: dict[str, str] = {}
 
@@ -128,3 +134,25 @@ def extract_session_cookies(raw: str) -> dict[str, str]:
             found[match.group(1)] = match.group(2).strip().strip('"')
 
     return found
+
+
+def _cookies_from_curl(command: str) -> str:
+    """Return the cookie string carried by a copied ``curl`` command.
+
+    Handles ``-b '…'``, ``--cookie '…'``, ``--cookie-raw '…'`` with single or
+    double quotes, both space-separated (``-b 'value'``) and equals
+    (``--cookie="value"``) forms. Falls back to a ``Cookie:`` header
+    (``-H 'Cookie: …'``) when present.
+    """
+    for pattern in (
+        # --cookie="value" / --cookie-raw='value' / -b="value"
+        r"(?:--cookie(?:-raw)?|-b)\s*=\s*([\"'])(?P<v>.*?)\1",
+        # --cookie "value" / -b 'value'
+        r"(?:--cookie(?:-raw)?|-b)\s+([\"'])(?P<v>.*?)\1",
+        # -H 'Cookie: value'
+        r"-H\s+([\"'])Cookie:\s*(?P<v>.*?)\1",
+    ):
+        match = re.search(pattern, command, re.IGNORECASE | re.DOTALL)
+        if match and match.group("v") is not None:
+            return match.group("v").strip()
+    return command

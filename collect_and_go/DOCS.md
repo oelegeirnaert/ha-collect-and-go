@@ -17,23 +17,24 @@ and payment stay in the official app).
    - Open [collectandgo.be](https://www.collectandgo.be) **in a new tab**,
      log in with your Xtra account (SMS code, as usual) and pick your store.
    - Stay on collectandgo.be and open the developer tools with **F12**.
-   - Go to **Application** (Chrome/Edge) or **Storage** (Firefox) →
-     **Cookies** → `https://www.collectandgo.be`.
-   - Find the cookie that starts with **`WC_AUTHENTICATION_`** and copy its
-     **name and value** (e.g. `WC_AUTHENTICATION_1234567=1234567%2C…`).
-   - Paste it in the add-on panel and save.
+   - **Easiest:** go to the **Network** tab, click any request to
+     `collectandgo.be`, right-click → **Copy → Copy as cURL**, and paste the
+     whole command in the panel. *(Alternative: **Application** →
+     **Cookies** → `https://www.collectandgo.be` → copy the **name and
+     value** of the cookie that starts with `WC_AUTHENTICATION_`.)*
+   - Save.
 3. The add-on validates the session against your live cart immediately — a
    wrong value is rejected with a clear message. Done — both you and your
    partner can now use the panel.
 
 > Only the session cookies are stored (in the add-on's own data folder,
-> `/data/session.json`). Your password is never stored. Pasting a whole
-> cookie header (or several cookies at once) works too — the add-on picks
-> out what it needs (`WC_AUTHENTICATION_…`, `WC_USERACTIVITY_…`,
-> `WC_ACTIVEPOINTER`, `WC_SESSION_ESTABLISHED`). You can also store the
-> cookies in the add-on **configuration** (`session_cookies` option) if you
-> prefer configuration-as-code; a session saved via the panel takes
-> precedence.
+> `/data/session.json`). Your password is never stored. From a pasted curl
+> command the add-on picks out what it needs (`WC_AUTHENTICATION_…`,
+> `WC_USERACTIVITY_…`, `WC_ACTIVEPOINTER`, `COL_SHOP`,
+> `WC_SESSION_ESTABLISHED`); tracking cookies are discarded. You can also
+> store the cookies in the add-on **configuration** (`session_cookies`
+> option) if you prefer configuration-as-code; a session saved via the panel
+> takes precedence.
 
 ### Session expired?
 

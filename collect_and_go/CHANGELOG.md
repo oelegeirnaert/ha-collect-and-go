@@ -19,12 +19,13 @@ All notable changes to the Collect & Go add-on. This project follows
   `{"productId": <uniqueID>, "quantity": "n", "xitem_field2": "P|n|st"}`
   and the **store catalog id** (`10646`, from `COL_SHOP`) instead of the
   generic one.
-- **Login is now one paste:** the panel accepts a whole cookie header, the
-  DevTools cookie-table rows, a single `WC_AUTHENTICATION_…=…` pair, or
-  just its value — and validates against the live cart before saving. A
-  rejected session now shows a clear message instead of a 502, and
-  validation falls back to the order-history endpoint when Imperva
-  throttles the cart read (405 → clean 429 in the UI).
+- **Login is now one paste:** the panel accepts a whole **Copy-as-cURL**
+  command (DevTools → Network), a cookie header, the DevTools cookie-table
+  rows, a single `WC_AUTHENTICATION_…=…` pair, or just its value — and
+  validates against the live cart before saving. A rejected session now
+  shows a clear message instead of a 502, and validation falls back to the
+  order-history endpoint when Imperva throttles the cart read (405 → clean
+  429 in the UI).
 - Options `wcauthtoken`/`wctoken`/`wctrustedtoken` replaced by a single
   `session_cookies` option.
 - Cart add/remove fall back to the direct WCS resource endpoints

@@ -199,7 +199,7 @@
       <li data-i18n-html="step3"></li>
       <li data-i18n-html="step4"></li>
     </ol>
-    <textarea id="token-input" placeholder="WC_AUTHENTICATION_1234567=…"></textarea>
+    <textarea id="token-input" placeholder='Paste the cURL command here (DevTools → Network → right-click a request → Copy as cURL) — or just WC_AUTHENTICATION_1234567=…'></textarea>
     <div class="row" style="margin-top:10px">
       <button id="save-session" class="primary" data-i18n="save">Save &amp; connect</button>
       <span id="save-status" class="muted"></span>
@@ -246,8 +246,8 @@ const I18N = {
     connect_intro: "The add-on talks to Collect&Go with your own session token. Your password is never stored — only the token, kept inside Home Assistant.",
     step1: 'Open <a href="https://www.collectandgo.be" target="_blank" rel="noopener">collectandgo.be</a> in a new tab, log in with your Xtra account (SMS code as usual) and pick your store.',
     step2: "Still on collectandgo.be, open the developer tools (<b>F12</b>) → tab <b>Application</b> (Chrome) or <b>Storage</b> (Firefox) → <b>Cookies</b> → <code>https://www.collectandgo.be</code>.",
-    step3: "Find the cookie that starts with <code>WC_AUTHENTICATION_</code> and copy its <b>name and value</b> — e.g. <code>WC_AUTHENTICATION_1234567=1234567%2C…</code>.",
-    step4: "Paste it below and save. Copying the whole cookie header (or several cookies at once) works too — the add-on picks out what it needs and validates it against your live cart immediately.",
+    step3: "Easiest: in the <b>Network</b> tab, click any request to <code>collectandgo.be</code>, right-click → <b>Copy → Copy as cURL</b>, and paste the whole thing below. Or use <b>Application → Cookies</b> and copy the <code>WC_AUTHENTICATION_…</code> cookie's <b>name and value</b>.",
+    step4: "Paste it below and save — the add-on picks the session cookies out of the curl command automatically and validates them against your live cart immediately.",
     save: "Save & connect", disconnect: "Disconnect session",
     checking: "checking…", connected: "connected", not_connected: "not connected", expired: "session expired",
     expired_banner: "Your Collect&Go session expired or is invalid. Reconnect below (takes 30 seconds).",
@@ -274,8 +274,8 @@ const I18N = {
     connect_intro: "De add-on praat met Collect&Go via je eigen sessietoken. Je wachtwoord wordt nooit bewaard — enkel het token, veilig binnen Home Assistant.",
     step1: 'Open <a href="https://www.collectandgo.be" target="_blank" rel="noopener">collectandgo.be</a> in een nieuw tabblad, meld aan met je Xtra-account (sms-code zoals gewoonlijk) en kies je winkel.',
     step2: "Open op collectandgo.be de ontwikkelaarstools (<b>F12</b>) → tabblad <b>Application</b> (Chrome) of <b>Opslag</b> (Firefox) → <b>Cookies</b> → <code>https://www.collectandgo.be</code>.",
-    step3: "Zoek de cookie die begint met <code>WC_AUTHENTICATION_</code> en kopieer <b>naam en waarde</b> — bv. <code>WC_AUTHENTICATION_1234567=1234567%2C…</code>.",
-    step4: "Plak dit hieronder en bewaar. De volledige cookieheader (of meerdere cookies tegelijk) plakken werkt ook — de add-on haalt eruit wat nodig is en controleert het meteen tegen je echte winkelmand.",
+    step3: "Makkelijkst: in het tabblad <b>Netwerk</b>, klik op om het even welk verzoek naar <code>collectandgo.be</code>, rechtermuisklik → <b>Kopiëren → Kopiëren als cURL</b> en plak alles hieronder. Of ga naar <b>Application → Cookies</b> en kopieer <b>naam en waarde</b> van de <code>WC_AUTHENTICATION_…</code>-cookie.",
+    step4: "Plak hieronder en bewaar — de add-on haalt de sessiecookies automatisch uit het curl-commando en controleert ze meteen tegen je echte winkelmand.",
     save: "Bewaar & koppel", disconnect: "Verbreek sessie",
     checking: "controleren…", connected: "gekoppeld", not_connected: "niet gekoppeld", expired: "sessie verlopen",
     expired_banner: "Je Collect&Go-sessie is verlopen of ongeldig. Koppel hieronder opnieuw (30 seconden werk).",
@@ -302,8 +302,8 @@ const I18N = {
     connect_intro: "L'add-on communique avec Collect&Go via votre propre jeton de session. Votre mot de passe n'est jamais enregistré — uniquement le jeton, conservé dans Home Assistant.",
     step1: 'Ouvrez <a href="https://www.collectandgo.be" target="_blank" rel="noopener">collectandgo.be</a> dans un nouvel onglet, connectez-vous avec votre compte Xtra (code SMS comme d’habitude) et choisissez votre magasin.',
     step2: "Sur collectandgo.be, ouvrez les outils développeur (<b>F12</b>) → onglet <b>Application</b> (Chrome) ou <b>Stockage</b> (Firefox) → <b>Cookies</b> → <code>https://www.collectandgo.be</code>.",
-    step3: "Trouvez le cookie commençant par <code>WC_AUTHENTICATION_</code> et copiez son <b>nom et sa valeur</b> — p.ex. <code>WC_AUTHENTICATION_1234567=1234567%2C…</code>.",
-    step4: "Collez-le ci-dessous et enregistrez. Coller toute l'en-tête de cookies (ou plusieurs cookies à la fois) fonctionne aussi — l'add-on extrait ce qu'il faut et le valide immédiatement contre votre chariot réel.",
+    step3: "Le plus simple : dans l'onglet <b>Réseau</b>, cliquez sur n'importe quelle requête vers <code>collectandgo.be</code>, clic droit → <b>Copier → Copier en cURL</b>, puis collez le tout ci-dessous. Ou utilisez <b>Application → Cookies</b> et copiez le <b>nom et la valeur</b> du cookie <code>WC_AUTHENTICATION_…</code>.",
+    step4: "Collez ci-dessous et enregistrez — l'add-on extrait automatiquement les cookies de session de la commande curl et les valide immédiatement contre votre chariot réel.",
     save: "Enregistrer & connecter", disconnect: "Déconnecter",
     checking: "vérification…", connected: "connecté", not_connected: "non connecté", expired: "session expirée",
     expired_banner: "Votre session Collect&Go a expiré ou est invalide. Reconnectez-vous ci-dessous (30 secondes).",
