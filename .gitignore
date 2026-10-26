@@ -5,3 +5,5 @@ venv/
 .DS_Store
 /tmp/
 .dev-data/
+.env
+collect_and_go/docs/curl/*

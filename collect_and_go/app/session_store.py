@@ -1,9 +1,14 @@
-"""Persistence of the Xtra session cookie in the add-on data folder.
+"""Persistence of the Collect&Go session cookies in the add-on data folder.
 
-Only the ``clpbff_session`` value (an UUID) is stored — never a password.
-Optionally, the Collect&Go ``wcauthtoken`` (the WCS session token used by
-the cart/order gateways) is kept next to it. The file lives in ``/data`` so
-it survives add-on restarts and updates.
+Only cookie values are stored — never a password. The file lives in
+``/data`` so it survives add-on restarts and updates.
+
+The session consists of the WCS cookies from a logged-in collectandgo.be
+browser session — most importantly ``WC_AUTHENTICATION_<userId>`` and
+``WC_USERACTIVITY_<userId>`` (see docs/api-collect-and-go-notes-v2.md).
+The setup panel accepts a whole pasted cookie header, a full cookie list
+copied out of DevTools, or just the WC_AUTHENTICATION value, and extracts
+what it needs.
 """
 
 from __future__ import annotations
@@ -14,46 +19,42 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
-SESSION_COOKIE = "clpbff_session"
-WCS_TOKEN = "wcauthtoken"
-_UUID_RE = re.compile(
-    r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-"
-    r"[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
-)
+# Cookie names that make up the session (exact names or prefixes).
+AUTH_PREFIX = "WC_AUTHENTICATION_"
+KEEP_EXACT = {
+    "WC_ACTIVEPOINTER",
+    "WC_SESSION_ESTABLISHED",
+    "priceMode",
+    "COL_SHOP",  # carries the store catalogId (CLPBE_10646)
+}
+KEEP_PREFIXES = (AUTH_PREFIX, "WC_USERACTIVITY_")
 
 
 class SessionStore:
     def __init__(self, path: Path) -> None:
         self.path = path
 
-    def _read(self) -> dict:
+    def load(self) -> dict[str, str]:
+        """Return the stored cookie mapping (empty dict when absent)."""
         try:
             data = json.loads(self.path.read_text(encoding="utf-8"))
-            return data if isinstance(data, dict) else {}
+            cookies = data.get("cookies") if isinstance(data, dict) else None
+            if isinstance(cookies, dict):
+                return {str(k): str(v) for k, v in cookies.items() if v}
         except (OSError, ValueError):
-            return {}
+            pass
+        return {}
 
-    def load(self) -> Optional[str]:
-        """Return the stored session id, or None."""
-        value = self._read().get("session")
-        return str(value) if value else None
-
-    def load_wcauthtoken(self) -> Optional[str]:
-        """Return the stored Collect&Go WCS auth token, or None."""
-        value = self._read().get(WCS_TOKEN)
-        return str(value) if value else None
-
-    def save(self, session: str, wcauthtoken: Optional[str] = None) -> None:
+    def save(self, cookies: dict[str, str]) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         payload = {
-            "session": session,
-            WCS_TOKEN: wcauthtoken or None,
+            "cookies": cookies,
             "updated_at": datetime.now(timezone.utc).isoformat(),
         }
         self.path.write_text(
             json.dumps(payload, indent=2), encoding="utf-8"
         )
-        # Session == credentials: keep the file private.
+        # Cookies == credentials: keep the file private.
         try:
             self.path.chmod(0o600)
         except OSError:
@@ -66,35 +67,64 @@ class SessionStore:
             pass
 
 
-def extract_session_cookie(raw: str) -> Optional[str]:
-    """Accept a bare UUID, a ``clpbff_session=...`` pair, or a whole cookie
-    header, and return just the session id."""
+def extract_session_cookies(raw: str) -> dict[str, str]:
+    """Extract the Collect&Go session cookies from whatever the user pastes:
+
+    * a whole ``Cookie:`` header or ``name=value; name=value`` list
+      (e.g. copied from DevTools → Network);
+    * a DevTools cookie-table paste (tab/comma separated, possibly quoted);
+    * just the ``WC_AUTHENTICATION_…`` cookie name + value;
+    * or just the bare ``WC_AUTHENTICATION`` *value* (``<userId>,<token>``).
+
+    Returns a ``{name: value}`` mapping, empty when nothing useful is found.
+    """
     raw = (raw or "").strip()
     if not raw:
-        return None
-    # Full cookie header or single pair?
-    for part in raw.split(";"):
-        part = part.strip()
-        if part.lower().startswith(SESSION_COOKIE + "="):
-            return part.split("=", 1)[1].strip() or None
-    # Bare value?
-    if _UUID_RE.match(raw):
-        return raw
-    return None
+        return {}
 
+    found: dict[str, str] = {}
 
-def extract_wcauthtoken(raw: str) -> Optional[str]:
-    """Accept a bare token, a ``wcauthtoken=...`` pair, or a whole cookie
-    header, and return just the token value."""
-    raw = (raw or "").strip()
-    if not raw:
-        return None
-    for part in raw.split(";"):
-        part = part.strip()
-        if part.lower().startswith(WCS_TOKEN + "="):
-            return part.split("=", 1)[1].strip() or None
-    # Bare value: one header-safe blob; "=" only allowed as trailing
-    # padding (tokens are often base64), not as a key=value pair.
-    if not re.search(r"[\s;]", raw) and "=" not in raw.rstrip("="):
-        return raw
-    return None
+    # Whole header / cookie-list paste: split on ';' and newlines.
+    for part in re.split(r"[;\n\r]+", raw):
+        part = part.strip().strip('"').strip()
+        if "=" not in part:
+            continue
+        name, _, value = part.partition("=")
+        name = name.strip().strip('"')
+        value = value.strip().strip('"')
+        if name in KEEP_EXACT or name.startswith(KEEP_PREFIXES):
+            found[name] = value
+
+    # Bare WC_AUTHENTICATION value: "<userId>,<token>" (often URL-encoded).
+    # Check this before the table-paste branch — a comma in the raw value
+    # would otherwise be mistaken for a column separator.
+    if not any(k.startswith(AUTH_PREFIX) for k in found):
+        match = re.fullmatch(r"(\d+)(?:%2[Cc]|,)(.+)", raw.strip().strip('"'))
+        if match:
+            user_id, token = match.group(1), match.group(2)
+            found[f"{AUTH_PREFIX}{user_id}"] = f"{user_id}%2C{token}"
+
+    # DevTools Application→Cookies table paste: lines like
+    # "WC_AUTHENTICATION_1234567\t1234567%2Cxxx\t.collectandgo.be\t/..."
+    if not any(k.startswith(AUTH_PREFIX) for k in found):
+        for line in raw.splitlines():
+            cols = re.split(r"[\t]", line.strip())
+            if len(cols) < 2:
+                cols = line.split()
+            if len(cols) < 2:
+                continue
+            name, value = cols[0].strip().strip('"'), cols[1].strip().strip('"')
+            if name in KEEP_EXACT or name.startswith(KEEP_PREFIXES):
+                found[name] = value
+
+    # Single pair like "WC_AUTHENTICATION_1234567=1234567%2Cxxx" (no ';').
+    if not any(k.startswith(AUTH_PREFIX) for k in found):
+        match = re.fullmatch(
+            r"(%s\d+)\s*=\s*(.+)" % re.escape(AUTH_PREFIX),
+            raw.strip().strip('"'),
+            re.DOTALL,
+        )
+        if match:
+            found[match.group(1)] = match.group(2).strip().strip('"')
+
+    return found

@@ -1,22 +1,12 @@
 configuration:
-  place_id:
-    name: Store ID (placeId)
-    description: >-
-      Numeric id of your Colruyt store. It is used for store-specific
-      pricing and availability. The default works fine for searching; see
-      the Documentation tab for how to find your own store id.
   language:
     name: Product language
-    description: Language used for product names and search results.
-  session_cookie:
-    name: Xtra session cookie (optional)
+    description: Language used for product names, search results and cart data.
+  session_cookies:
+    name: Collect&Go session cookies (optional)
     description: >-
-      The clpbff_session cookie value of your Xtra account. Normally you
-      connect via the add-on panel instead — only fill this in if you prefer
+      The session cookies from collectandgo.be — at minimum the
+      WC_AUTHENTICATION_<userId> cookie (name=value). Normally you connect
+      via the add-on panel instead (it validates the session against your
+      live cart before saving); only fill this in if you prefer
       configuration-as-code. A session saved in the panel takes precedence.
-  wcauthtoken:
-    name: Collect&Go token (optional)
-    description: >-
-      The wcauthtoken cookie from collectandgo.be. Enables the live cart
-      view, order history and direct add-to-cart. Normally saved via the
-      add-on panel; a token saved in the panel takes precedence.

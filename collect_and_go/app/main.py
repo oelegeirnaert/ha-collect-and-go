@@ -1,8 +1,11 @@
-"""Collect & Go — shared shopping list add-on.
+"""Collect & Go — shared Collect&Go cart add-on.
 
 FastAPI server that exposes a small REST API and serves the single-file web
 UI. Designed to run behind Home Assistant ingress (relative URL handling),
 with optional direct port access for automations.
+
+All product/cart/order traffic goes through the Collect&Go (HCL/WCS)
+gateway — see collectandgo.py and docs/api-notes.md.
 """
 
 from __future__ import annotations
@@ -21,22 +24,18 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel, Field
 
-from colruyt import (
+from collectandgo import (
     API_KEY,
-    CART_URLS,
+    CART_PAGE_URLS,
     AuthError,
-    ColruytClient,
-    ColruytError,
+    CollectAndGoClient,
+    CollectAndGoError,
     RateLimited,
     UpstreamError,
 )
-from session_store import (
-    SessionStore,
-    extract_session_cookie,
-    extract_wcauthtoken,
-)
+from session_store import SessionStore, extract_session_cookies
 
-APP_VERSION = "1.2.0"
+APP_VERSION = "2.2.0"
 DATA_DIR = Path(os.environ.get("DATA_DIR", "/data"))
 OPTIONS_FILE = DATA_DIR / "options.json"
 INDEX_FILE = Path(__file__).parent / "static" / "index.html"
@@ -52,7 +51,7 @@ _LOGGER = logging.getLogger("collect-and-go")
 # ---------------------------------------------------------------------------
 
 def _load_options() -> dict[str, Any]:
-    defaults: dict[str, Any] = {"place_id": "2643", "language": "nl"}
+    defaults: dict[str, Any] = {"language": "nl"}
     try:
         data = json.loads(OPTIONS_FILE.read_text(encoding="utf-8"))
         if isinstance(data, dict):
@@ -60,7 +59,6 @@ def _load_options() -> dict[str, Any]:
     except (OSError, ValueError):
         _LOGGER.warning("No add-on options found at %s, using defaults", OPTIONS_FILE)
     defaults["language"] = defaults.get("language") if defaults.get("language") in ("nl", "fr") else "nl"
-    defaults["place_id"] = str(defaults.get("place_id") or "2643")
     return defaults
 
 
@@ -68,28 +66,24 @@ OPTIONS = _load_options()
 SESSIONS = SessionStore(DATA_DIR / "session.json")
 
 
-def get_client() -> ColruytClient:
-    """Build a client with the best available session.
+def get_client() -> CollectAndGoClient:
+    """Build a client with the best available session cookies.
 
-    Precedence: session saved via the panel (/data/session.json) — that one
-    is usually the most recent — falling back to the optional add-on option.
-    The Collect&Go WCS token only exists in the panel store.
+    Precedence: cookies saved via the panel (/data/session.json) — usually
+    the most recent — falling back to the optional ``session_cookies``
+    add-on option (a pasted cookie header works there too).
     """
-    session = SESSIONS.load() or OPTIONS.get("session_cookie") or None
-    if session:
-        session = extract_session_cookie(session) or session
-    return ColruytClient(
-        session_id=session,
-        place_id=str(OPTIONS.get("place_id") or "2643"),
+    cookies = SESSIONS.load()
+    if not cookies and OPTIONS.get("session_cookies"):
+        cookies = extract_session_cookies(str(OPTIONS["session_cookies"]))
+    return CollectAndGoClient(
+        session=cookies,
         lang=OPTIONS.get("language") or "nl",
-        wcauthtoken=SESSIONS.load_wcauthtoken()
-        or OPTIONS.get("wcauthtoken")
-        or None,
     )
 
 
 # ---------------------------------------------------------------------------
-# tiny TTL cache — the Colruyt API rate-limits aggressively (HTTP 456)
+# tiny TTL cache — the Collect&Go API rate-limits aggressively (HTTP 456)
 # ---------------------------------------------------------------------------
 
 class TTLCache:
@@ -109,11 +103,15 @@ class TTLCache:
         for key in [k for k in self._data if k.startswith(prefix)]:
             del self._data[key]
 
+    def clear(self) -> None:
+        self._data.clear()
+
 
 CACHE = TTLCache()
-LIST_CACHE_TTL = 8.0
+CART_CACHE_TTL = 8.0
 SEARCH_CACHE_TTL = 30.0
-MOST_BOUGHT_CACHE_TTL = 300.0
+ORDER_CACHE_TTL = 300.0
+LIST_CACHE_TTL = 60.0
 
 
 # ---------------------------------------------------------------------------
@@ -133,26 +131,34 @@ async def rate_limit_handler(_, exc: RateLimited):
     return JSONResponse(status_code=429, content={"error": "rate_limited", "detail": str(exc)})
 
 
-@app.exception_handler(ColruytError)
-async def upstream_error_handler(_, exc: ColruytError):
+@app.exception_handler(CollectAndGoError)
+async def upstream_error_handler(_, exc: CollectAndGoError):
     return JSONResponse(status_code=502, content={"error": "upstream", "detail": str(exc)})
 
 
 @app.exception_handler(httpx.HTTPError)
 async def network_error_handler(_, exc: httpx.HTTPError):
-    _LOGGER.warning("Network error talking to Colruyt: %s", exc)
+    _LOGGER.warning("Network error talking to Collect&Go: %s", exc)
     return JSONResponse(status_code=502, content={"error": "network", "detail": str(exc)})
 
 
 class SessionIn(BaseModel):
-    cookie: str = Field(min_length=1)
-    wcauthtoken: Optional[str] = None
+    cookies: str = Field(min_length=1)
 
 
-class AddItemIn(BaseModel):
-    product_id: Optional[str] = None
-    description: Optional[str] = None
+class AddToCartIn(BaseModel):
+    product_id: str = Field(min_length=1)
     quantity: int = Field(default=1, ge=1, le=99)
+    entry_id: Optional[str] = None
+
+
+class UpdateCartItemIn(BaseModel):
+    quantity: int = Field(ge=1, le=99)
+
+
+class AddToNamedListIn(BaseModel):
+    list_id: str = Field(min_length=1)
+    product_ids: list[str] = Field(min_length=1)
 
 
 # ---------------------------------------------------------------------------
@@ -177,22 +183,20 @@ async def health() -> dict[str, str]:
 @app.get("/api/state")
 async def state() -> dict[str, Any]:
     client = get_client()
-    configured = bool(client.session_id)
+    configured = client.has_session
     return {
         "version": APP_VERSION,
         "configured": configured,
-        "place_id": client.place_id,
         "language": client.lang,
-        "cart_url": CART_URLS.get(client.lang, CART_URLS["nl"]),
+        "cart_url": CART_PAGE_URLS.get(client.lang, CART_PAGE_URLS["nl"]),
         "session_source": "panel" if SESSIONS.load() else ("options" if configured else None),
-        "wcs_token": bool(client.wcauthtoken),
     }
 
 
 @app.get("/api/session/check")
 async def session_check() -> dict[str, Any]:
     client = get_client()
-    if not client.session_id:
+    if not client.has_session:
         return {"configured": False, "valid": False}
     valid = await client.validate_session()
     return {"configured": True, "valid": valid}
@@ -200,89 +204,98 @@ async def session_check() -> dict[str, Any]:
 
 @app.post("/api/session")
 async def session_save(body: SessionIn) -> dict[str, Any]:
-    session = extract_session_cookie(body.cookie)
-    if not session:
+    """Save a new session. Accepts anything the user can copy: a whole
+    cookie header, the DevTools cookie-table rows, a single
+    ``WC_AUTHENTICATION_…=…`` pair, or just its value. Validated against
+    the live cart before storing — so a wrong paste is caught immediately."""
+    cookies = extract_session_cookies(body.cookies)
+    if not cookies:
         raise HTTPException(
             status_code=400,
-            detail="Could not find a clpbff_session value in what you pasted.",
+            detail="Could not find the WC_AUTHENTICATION cookie in what you pasted.",
         )
-    wcauthtoken = extract_wcauthtoken(body.wcauthtoken or "")
-    client = ColruytClient(
-        session_id=session,
-        place_id=str(OPTIONS.get("place_id") or "2643"),
+    client = CollectAndGoClient(
+        session=cookies,
         lang=OPTIONS.get("language") or "nl",
-        wcauthtoken=wcauthtoken,
     )
     valid = await client.validate_session()
     if not valid:
-        raise HTTPException(status_code=401, detail="Session was rejected by Colruyt.")
-    SESSIONS.save(session, wcauthtoken=wcauthtoken)
-    CACHE.invalidate("list")
+        raise HTTPException(status_code=401, detail="Session was rejected by Collect&Go.")
+    SESSIONS.save(cookies)
+    CACHE.clear()
     _LOGGER.info(
-        "New session saved and validated (wcauthtoken %s).",
-        "stored" if wcauthtoken else "not provided",
+        "New Collect&Go session saved and validated (%d cookies: %s).",
+        len(cookies),
+        ", ".join(sorted(cookies)),
     )
-    return {"configured": True, "valid": True, "wcs_token": bool(wcauthtoken)}
+    return {"configured": True, "valid": True}
 
 
 @app.delete("/api/session")
 async def session_clear() -> dict[str, bool]:
     SESSIONS.clear()
-    CACHE.invalidate("list")
+    CACHE.clear()
     return {"ok": True}
 
 
 # ---------------------------------------------------------------------------
-# shopping list
+# cart ("winkelmand") — the shared object this add-on is built around
 # ---------------------------------------------------------------------------
 
-@app.get("/api/list")
-async def list_items(force: bool = False) -> dict[str, Any]:
+@app.get("/api/cart")
+async def view_cart(force: bool = False) -> dict[str, Any]:
+    """Live contents of the Collect&Go cart."""
     if not force:
-        cached = CACHE.get("list", LIST_CACHE_TTL)
+        cached = CACHE.get("cart", CART_CACHE_TTL)
         if cached is not None:
-            return {"items": cached, "cached": True}
-    items = await get_client().get_list()
-    CACHE.set("list", items)
-    return {"items": items, "cached": False}
+            return {**cached, "cached": True}
+    cart = await get_client().get_cart()
+    CACHE.set("cart", cart)
+    return {**cart, "cached": False}
 
 
-class AddItemsIn(BaseModel):
-    items: list[AddItemIn]
+@app.post("/api/cart/items")
+async def add_to_cart(body: AddToCartIn) -> dict[str, Any]:
+    """Add a product to the cart. Also usable from HASS automations:
 
-
-@app.post("/api/list/items")
-async def add_item(body: AddItemsIn) -> dict[str, Any]:
-    """Add one or more items. Also usable from HASS automations:
-
-    rest_command example payload: {"items": [{"description": "Melk", "quantity": 2}]}
+    rest_command payload: {"product_id": "14507", "entry_id": "3074…", "quantity": 2}
+    — ``entry_id`` (the numeric uniqueID) is what the cart actually needs;
+    both come straight from /api/search results.
     """
-    if not body.items:
-        raise HTTPException(status_code=400, detail="No items provided.")
-    to_add = []
-    for item in body.items:
-        description = (item.description or "").strip()
-        if not description and item.product_id:
-            description = f"Product {item.product_id}"
-        if not description:
-            raise HTTPException(status_code=400, detail="description is required.")
-        to_add.append(
-            {
-                "product_id": item.product_id,
-                "description": description,
-                "quantity": item.quantity,
-            }
-        )
-    items = await get_client().add_items(to_add)
-    CACHE.set("list", items)
-    return {"items": items, "added": len(to_add)}
+    result = await get_client().add_to_cart(
+        body.product_id, body.quantity, entry_id=body.entry_id
+    )
+    CACHE.invalidate("cart")
+    return {"added": True, "result": result}
 
 
-@app.delete("/api/list/items/{item_id}")
-async def remove_item(item_id: str) -> dict[str, Any]:
-    ok = await get_client().remove_item(item_id)
-    CACHE.invalidate("list")
+@app.put("/api/cart/items/{order_item_id}")
+async def update_cart_item(order_item_id: str, body: UpdateCartItemIn) -> dict[str, Any]:
+    result = await get_client().update_cart_item(order_item_id, body.quantity)
+    CACHE.invalidate("cart")
+    return {"updated": True, "result": result}
+
+
+@app.delete("/api/cart/items/{order_item_id}")
+async def remove_cart_item(order_item_id: str) -> dict[str, Any]:
+    ok = await get_client().remove_cart_item(order_item_id)
+    CACHE.invalidate("cart")
     return {"removed": ok}
+
+
+# ---------------------------------------------------------------------------
+# orders
+# ---------------------------------------------------------------------------
+
+@app.get("/api/orders")
+async def order_history() -> dict[str, Any]:
+    """Past Collect&Go orders of the account."""
+    cached = CACHE.get("orders", ORDER_CACHE_TTL)
+    if cached is not None:
+        return {"orders": cached}
+    orders = await get_client().get_order_history()
+    CACHE.set("orders", orders)
+    return {"orders": orders}
 
 
 # ---------------------------------------------------------------------------
@@ -291,20 +304,17 @@ async def remove_item(item_id: str) -> dict[str, Any]:
 
 @app.get("/api/lists")
 async def named_lists() -> dict[str, Any]:
-    cached = CACHE.get("lists", 60.0)
+    cached = CACHE.get("lists", LIST_CACHE_TTL)
     if cached is not None:
         return {"lists": cached}
     try:
         lists = await get_client().get_lists()
-    except ColruytError:
+    except AuthError:
+        raise
+    except CollectAndGoError:
         lists = []
     CACHE.set("lists", lists)
     return {"lists": lists}
-
-
-class AddToNamedListIn(BaseModel):
-    list_id: str = Field(min_length=1)
-    product_ids: list[str] = Field(min_length=1)
 
 
 @app.post("/api/lists/items")
@@ -314,87 +324,24 @@ async def add_to_named_list(body: AddToNamedListIn) -> dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
-# cart (Collect&Go WCS backend — needs the wcauthtoken; the UI falls back to
-# the shopping list when the token is missing or rejected)
-# ---------------------------------------------------------------------------
-
-class AddToCartIn(BaseModel):
-    product_id: str = Field(min_length=1)
-    quantity: int = Field(default=1, ge=1, le=99)
-
-
-@app.get("/api/cart")
-async def view_cart() -> dict[str, Any]:
-    """Live contents of the Collect&Go cart (wcauthtoken required)."""
-    if not get_client().wcauthtoken:
-        raise HTTPException(
-            status_code=400,
-            detail="No wcauthtoken stored — reconnect and paste it in the panel.",
-        )
-    cart = await get_client().get_cart()
-    CACHE.set("cart", cart)
-    return cart
-
-
-@app.get("/api/orders")
-async def order_history() -> dict[str, Any]:
-    """Past Collect&Go orders (wcauthtoken required)."""
-    if not get_client().wcauthtoken:
-        raise HTTPException(
-            status_code=400,
-            detail="No wcauthtoken stored — reconnect and paste it in the panel.",
-        )
-    cached = CACHE.get("orders", 300.0)
-    if cached is not None:
-        return {"orders": cached}
-    orders = await get_client().get_order_history()
-    CACHE.set("orders", orders)
-    return {"orders": orders}
-
-
-@app.post("/api/cart/items")
-async def add_to_cart(body: AddToCartIn) -> dict[str, Any]:
-    result = await get_client().add_to_cart(body.product_id, body.quantity)
-    CACHE.invalidate("cart")
-    return {"added": True, "result": result}
-
-
-# ---------------------------------------------------------------------------
 # products
 # ---------------------------------------------------------------------------
 
 @app.get("/api/search")
-async def search(q: str = "", size: int = 24, source: str = "xtra") -> dict[str, Any]:
-    """Search the assortment.
-
-    ``source=xtra`` (default): the Xtra/Colruyt product search, no session
-    needed. ``source=wcs``: the Collect&Go shop catalog (WCS backend) —
-    results carry the ``partNumber`` the cart endpoints accept.
-    """
+async def search(q: str = "", size: int = 24) -> dict[str, Any]:
+    """Search the Collect&Go assortment. Results carry the WCS ``partNumber``
+    (``product_id``) that the cart endpoints accept."""
     q = q.strip()
     if len(q) < 2:
         return {"total": 0, "products": []}
     size = max(1, min(size, 50))
-    key = f"search:{source}:{q.lower()}:{size}"
+    key = f"search:{q.lower()}:{size}"
     cached = CACHE.get(key, SEARCH_CACHE_TTL)
     if cached is not None:
         return cached
-    if source == "wcs":
-        result = await get_client().search_products_wcs(q, size=size)
-    else:
-        result = await get_client().search_products(q, size=size)
+    result = await get_client().search_products(q, size=size)
     CACHE.set(key, result)
     return result
-
-
-@app.get("/api/most-bought")
-async def most_bought() -> dict[str, Any]:
-    cached = CACHE.get("most-bought", MOST_BOUGHT_CACHE_TTL)
-    if cached is not None:
-        return {"products": cached}
-    products = await get_client().most_bought()
-    CACHE.set("most-bought", products)
-    return {"products": products}
 
 
 # ---------------------------------------------------------------------------
@@ -403,16 +350,16 @@ async def most_bought() -> dict[str, Any]:
 
 async def _startup_check() -> None:
     client = get_client()
-    if not client.session_id:
-        _LOGGER.info("No session configured yet — open the panel to connect your Xtra account.")
+    if not client.has_session:
+        _LOGGER.info("No session configured yet — open the panel to connect Collect&Go.")
         return
     try:
         valid = await client.validate_session()
         if valid:
-            _LOGGER.info("Session valid. Store placeId=%s, language=%s.", client.place_id, client.lang)
+            _LOGGER.info("Collect&Go session valid. Language=%s.", client.lang)
         else:
-            _LOGGER.warning("Session expired or invalid — reconnect via the panel.")
-    except ColruytError as exc:
+            _LOGGER.warning("Collect&Go session expired or invalid — reconnect via the panel.")
+    except CollectAndGoError as exc:
         _LOGGER.warning("Could not validate session at startup: %s", exc)
 
 

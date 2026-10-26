@@ -1,75 +1,82 @@
-# API notes (reverse engineered, verified 2026-10-22)
+# API notes (reverse engineered)
 
-No official public API exists. These are the endpoints the Colruyt web apps
-call themselves. Traffic credits: github.com/ddvlamin/xtra-mcp
-(docs/api-call-dumps) + own probing.
+Since v2.0.0 the add-on talks **only** to the Collect&Go backend: the HCL/WCS
+commerce gateway behind www.collectandgo.be. No official public API exists;
+these are the endpoints the web app calls itself. Sources:
+docs/api-collect-and-go-notes.md (live DevTools analysis) +
+github.com/ddvlamin/xtra-mcp. The old Colruyt/Xtra BFF endpoints
+(`latest-shopping-list`, `product-search-prs`, `most-bought-products`) were
+used up to v1.x and are kept at the bottom for reference only.
 
-## Auth
+## Auth (verified against the live site, docs/curl/product_display.example)
 
 - Login is Azure AD B2C at `login.myxtra.be` (`B2C_1A_signin`) **with SMS
-  verification** → not sanely automatable → the add-on reuses the session.
-- Session cookie: `clpbff_session` (UUID), domain `.colruyt.be`.
-- Every API call also needs the public header
-  `x-cg-apikey: a8ylmv13-b285-4788-9e14-0f79b7ed2411` (hardcoded in the web
-  apps).
-- There is Imperva-style bot protection (`reese84` cookie). Bursts of
-  unauthenticated requests get answered with **HTTP 456** → the app caches
-  and backs off.
+  verification** → not sanely automatable → the add-on reuses the session
+  instead of logging in.
+- A working request needs **both**:
+  - the ``wcauthtoken`` request header — its value is the
+    ``WC_AUTHENTICATION_<userId>`` cookie value verbatim
+    (``<userId>%2C<token>``); and
+  - the session cookies: ``WC_AUTHENTICATION_<userId>``,
+    ``WC_USERACTIVITY_<userId>``, ``WC_ACTIVEPOINTER`` (``<langId>%2C90004``),
+    ``WC_SESSION_ESTABLISHED=true`` (plus ``priceMode``).
+  The header alone → 500; the cookies alone → 500. Together → 200.
+- Every gateway request also needs the static header
+  `x-cg-apikey: 502b657c-624c-11eb-8024-f4d06b721e80` (the site's
+  `apiGatewayKey`), and `content-type: application/json` on writes.
+- Expired/invalid session → **500** on the gateway (not a clean 401).
+- Expect Imperva-style bot protection (`reese84` cookie, time-sensitive,
+  cannot be reused): bursts can get answered with **HTTP 456** → the app
+  caches and backs off.
 
 ## Endpoints
 
-Base: `https://apix.colruyt.be/gateway/emec.colruyt.bffsvc/cg`
-(session cookie required; 401 without)
+Base: `https://apip.collectandgo.be/gateway`
+Constants: store `90004`, catalogId `10429`, shopType `CLPBE`,
+langId `-1001` (nl) / `-1002` (fr).
 
 | Endpoint | Method | Notes |
 | --- | --- | --- |
-| `/latest-shopping-list` | GET | params: `limit, offset, sort=createdAt desc, placeId, lang, prs=true` → JSON with items under `getListItems.data` **or** `data.items` **or** `items` |
-| `/add-items-to-list` | POST | body `{"items":[{id: uuid, createdAt, updatedAt, completedAt: null, description, productData: {productId, quantity, unitCode: "P"}}]}` → returns the **full** updated list. `productData` optional for free-text items. |
-| `/remove-item-from-list/{uuid}` | DELETE | 200/204 |
-| `/most-bought-products` | GET | params `lang, placeId, prs=true` → array of products |
+| `/ecomfoodb2c.eshop.wcsproductviewsearchsvc/v1/store/90004/productview/bySearchTerm/{term}` | GET | Assortment search. Products in `catalogEntryView[]`; id = `partNumber`. Prices in `price[]` (`usage: Display/Offer`, string `value`). Images are relative asset paths → prepend `https://static.colruytgroup.com/images` and drop the `JPG/` prefix. |
+| `/ecomfoodb2c.eshop.wcscartsvcv2/v2/store/90004/cart/@self` | GET | Live cart: `orderItem[]` (each with `orderItemId`, `partNumber`, `quantity`), totals in `grandTotal`. |
+| `/ecomfoodb2c.eshop.wcscartsvcv2/v2/store/90004/cart` | POST | **Add to cart (verified live, docs/curl/add_to_cart.example):** body `{"orderItem": [{"productId": "<numeric uniqueID>", "quantity": "1", "xitem_field2": "P|1|st"}]}` — `productId` = the product's numeric `uniqueID`, `xitem_field2` = unit marker `P|<qty>|st`. ⚠️ `catalogId` must be the **store catalog** (e.g. `10646`, from the `COL_SHOP` cookie `CLPBE_10646`), not the generic `10429`. |
+| `…/cart/@self/update_order_item` | PUT | Update a line: `{"orderItem": [{"orderItemId": "...", "quantity": "3", "xitem_field2": "P|3|st", "partNumber": "<numeric uniqueID>"}], …}`. |
+| `…/cart/@self/delete_order_item?orderItemId=…` | DELETE | Remove a cart line. |
+| `/ecomfoodb2c.eshop.wcsordersvcv2/v2/store/90004/order/@history` | GET | Past orders in `Order[]` (`orderId`, `status`, `placedDate`, `grandTotal`). |
+| `/ecomfoodb2c.eshop.wcslistsvc/v1/store/90004/list/@self/type/CUSTOMER` | GET | Named lists ("mijnlijstjes"). |
+| `…/wcslistsvc/v1/store/90004/list/{listId}/item` | POST | Add to named list, body `{"productIds": ["<partNumber>"]}` (best effort). |
 
-Product search (**no session needed**, only the api key):
+## Direct WCS resource endpoints (docs/api-collect-and-go-notes-v2.md)
 
-```
-GET https://apip.colruyt.be/gateway/emec.colruyt.protected.bffsvc/cg/{lang}/api/product-search-prs
-    ?searchTerm=melk&placeId=2643&size=25&sort=relevancy desc&isAvailable=true&skip=0
-```
-
-Product fields used: `technicalArticleNumber` (= productId), `name`,
-`LongName`, `brand`, `content`, `thumbNail`, `topCategoryName`,
-`price.basicPrice`, `price.measurementUnit`, `price.measurementUnitPrice`,
-`isAvailable`, `IsWeightArticle`, `GTIN`.
-
-## Collect&Go WCS gateway (cart, orders, shop search)
-
-The Collect&Go shop itself runs on an HCL/WCS commerce backend with its own
-gateways under `https://apip.collectandgo.be/gateway` (see
-docs/api-collect-and-go-notes.md).
-
-Auth for these endpoints: the public `x-cg-apikey` header **plus** a dynamic
-`wcauthtoken` header (session token, copied from a logged-in
-collectandgo.be browser session), and `content-type: application/json`.
+The web app also talks straight to HCL Commerce resources on
+`https://www.collectandgo.be/wcs/resources/store/{storeId}` — same session
+cookies, no gateway prefix. The add-on uses them as a fallback when the
+gateway returns a 5xx (observed on cart writes).
 
 | Endpoint | Method | Notes |
 | --- | --- | --- |
-| `/ecomfoodb2c.eshop.wcsproductviewsearchsvc/v1/store/90004/productview/bySearchTerm/{term}` | GET | Shop search; products in `catalogEntryView`, id = `partNumber` |
-| `/ecomfoodb2c.eshop.wcscartsvcv2/v2/store/90004/cart/@self` | GET | Live cart contents (`orderItem` array) |
-| `/ecomfoodb2c.eshop.wcscartsvcv2/v2/store/90004/cart/@self/update_order_item` | PUT | Add to cart, body `{"orderItem": [{"partNumber", "quantity"}], "catalogId", "langId"}` |
-| `/ecomfoodb2c.eshop.wcsordersvcv2/v2/store/90004/order/@history` | GET | Past orders (`Order` array) |
+| `/wcs/resources/store/{storeId}/cart/@self` | GET | Live cart (same shape as the gateway) |
+| `/wcs/resources/store/{storeId}/cart` | POST | Add item, body `{"orderItem": [{"partNumber", "quantity"}]}` |
+| `/wcs/resources/store/{storeId}/cart/item/{orderItemId}` | DELETE | Remove a cart line |
+| `/wcs/resources/store/V2/loginidentity` (+ `/refresh`) | POST | Login/token refresh — needs SMS 2FA, **not** automatable |
 
-Store id `90004`, catalogId `10429`, langId `-1001` (nl) / `-1002` (fr),
-apiGatewayKey `502b657c-624c-11eb-8024-f4d06b721e80`.
+Checkout from that world (`POST cart/@self/checkout`, `PUT
+shipping_info`, `POST /order`) stays in the official app: it needs the
+time-sensitive `reese84` bot cookie plus `addressId`/`shipModeId` payloads.
 
-Checkout is a multi-step state machine (PUT the handover service, e.g.
-`COLLECTNEXTDAY`, on the cart, then a final POST to submit) and stays in the
-official app/website. Token refresh would go through the `/xtra/authentication`
-endpoints, but login needs SMS 2FA, so the add-on just stores a pasted token.
+## Checkout
 
-## List vs. cart
+Checkout is a multi-step state machine: `PUT` the handover service (e.g.
+`COLLECTNEXTDAY`) onto the cart/order, then a final `POST` to submit. Time
+slot and payment stay in the official app/website — deliberately out of
+scope; the panel deep-links to the cart page instead.
 
-The Xtra **shopping list** (above) is shared account-wide and shows up in the
-Xtra app, colruyt.be and Collect&Go ("Mijn lijstje"). The actual Collect&Go
-**cart** (`www.collectandgo.be/nl/winkelwagen`) runs on a separate HCL/WCS
-commerce backend (`orderItem`, `calculateBasket`, …) — reverse engineering it
-is possible but unverified without an account; deliberately out of scope for
-v1. Checkout (time slot, payment) stays in the official app anyway.
+## Reference only: the old Xtra BFF (≤ v1.x)
+
+Base `https://apix.colruyt.be/gateway/emec.colruyt.bffsvc/cg`, auth via
+`clpbff_session` cookie + `x-cg-apikey: a8ylmv13-b285-4788-9e14-0f79b7ed2411`.
+Endpoints used: `/latest-shopping-list`, `/add-items-to-list`,
+`/remove-item-from-list/{uuid}`, `/most-bought-products`, plus the
+session-less search at
+`https://apip.colruyt.be/gateway/emec.colruyt.protected.bffsvc/cg/{lang}/api/product-search-prs`
+(productId = `technicalArticleNumber`). **No longer called by the add-on.**

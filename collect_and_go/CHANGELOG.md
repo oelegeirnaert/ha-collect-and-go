@@ -4,6 +4,77 @@ All notable changes to the Collect & Go add-on. This project follows
 [Semantic Versioning](https://semver.org/): **MAJOR** for breaking changes,
 **MINOR** for new features, **PATCH** for fixes.
 
+## [2.2.0] — 2026-10-26
+
+### Changed (breaking)
+
+- **Auth = cookies + header, exactly like the site** (verified via
+  `docs/curl/product_display.example`): the ``wcauthtoken`` request header carries the
+  `WC_AUTHENTICATION_<userId>` cookie value verbatim, and the session
+  cookies (`WC_AUTHENTICATION_…`, `WC_USERACTIVITY_…`, `WC_ACTIVEPOINTER`,
+  `WC_SESSION_ESTABLISHED`, `priceMode`, `COL_SHOP`) go along. The
+  v2.0/v2.1 token fields are gone.
+- **Add to cart = the real call** (verified via
+  `docs/curl/add_to_cart.example`): `POST …/v2/store/90004/cart` with
+  `{"productId": <uniqueID>, "quantity": "n", "xitem_field2": "P|n|st"}`
+  and the **store catalog id** (`10646`, from `COL_SHOP`) instead of the
+  generic one.
+- **Login is now one paste:** the panel accepts a whole cookie header, the
+  DevTools cookie-table rows, a single `WC_AUTHENTICATION_…=…` pair, or
+  just its value — and validates against the live cart before saving. A
+  rejected session now shows a clear message instead of a 502, and
+  validation falls back to the order-history endpoint when Imperva
+  throttles the cart read (405 → clean 429 in the UI).
+- Options `wcauthtoken`/`wctoken`/`wctrustedtoken` replaced by a single
+  `session_cookies` option.
+- Cart add/remove fall back to the direct WCS resource endpoints
+  (`/wcs/resources/store/…`) when the gateway answers 5xx.
+
+## [2.1.0] — 2026-10-26
+
+### Added
+
+- **Direct WCS cart endpoints** (`/wcs/resources/store/…`, see
+  `docs/api-collect-and-go-notes-v2.md`): with the optional `WCToken` +
+  `WCTrustedToken` pair (new *Advanced* section in the setup panel, or the
+  matching add-on options) cart view/add/remove use the faster direct
+  endpoints, with the standard gateway as automatic fallback. The session
+  cookies `WC_SESSION_ESTABLISHED` / `WC_ACTIVEPOINTER` are sent along.
+- `/api/state` now reports `wcs_tokens` so the panel can show which
+  transport is active.
+- Product images now resolve correctly (WCS asset paths are mapped to the
+  `static.colruytgroup.com` CDN).
+
+### Changed
+
+- The panel got the Collect&Go look: brand palette (dark-blue header, red
+  accents, orange badges), rounded cards and buttons.
+
+## [2.0.0] — 2026-10-26
+
+### Changed (breaking)
+
+- The add-on now talks **only** to the Collect&Go (HCL/WCS) gateway; the
+  old Colruyt/Xtra endpoints (the shared "Mijn lijstje" list, the
+  `product-search-prs` search and "most bought") are no longer used.
+- **Simpler login:** one token instead of two cookies. Paste the
+  `wcauthtoken` from collectandgo.be (bare value or whole cookie string) —
+  the add-on validates it against your live cart before saving, and an
+  expired token immediately shows the reconnect flow.
+- The panel is now **cart-centric**: live cart with quantity steppers,
+  remove buttons and total; search results add straight into the cart.
+- REST API: `/api/list*` is gone in favour of `/api/cart` (GET),
+  `/api/cart/items` (POST) and `/api/cart/items/{orderItemId}`
+  (PUT/DELETE); `/api/search` uses the WCS shop catalog; `/api/orders`
+  is new.
+- Options `place_id` and `session_cookie` removed — the store comes from
+  your Collect&Go session; use `wcauthtoken` instead.
+
+### Removed
+
+- Free-text items (the WCS cart only accepts real products / partNumbers).
+- "Most bought" suggestions (Xtra-only endpoint).
+
 ## [1.2.0] — 2026-10-26
 
 ### Added

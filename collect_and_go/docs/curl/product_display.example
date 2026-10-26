@@ -1,0 +1,15 @@
+# Verified authenticated request (credentials scrubbed — structure only).
+#
+# Shows the two pieces a working call needs:
+#   * wcauthtoken header = WC_AUTHENTICATION_<userId> cookie value verbatim
+#   * the WC_* session cookies (auth, activity, active pointer, session flag)
+# Header alone -> HTTP 500, cookies alone -> HTTP 500; together -> 200.
+
+curl --url 'https://www.collectandgo.be/ProductDisplay?storeId=90004&errorViewName=ProductDisplayErrorView&urlLangId=-1001&productId=<NUMERIC_UNIQUEID>&urlRequestType=Ajax&langId=-1001&catalogId=10646&headlessPDP=true&list=false&eligibleToViewBabyBoxVoucherPage=false' \
+  -H 'accept: */*' \
+  -H 'content-type: application/json' \
+  -b 'WC_SESSION_ESTABLISHED=true; WC_ACTIVEPOINTER=-1001%2C90004; COL_SHOP=CLPBE_10646; WC_AUTHENTICATION_<USER_ID>=<USER_ID>%2C<AUTH_TOKEN>; WC_USERACTIVITY_<USER_ID>=<USER_ID>%2C90004%2Cnull%2C%E2%80%A6; priceMode=' \
+  -H 'referer: https://www.collectandgo.be/nl/zoek?searchTerm=water' \
+  -H 'user-agent: Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36' \
+  -H 'wcauthtoken: <USER_ID>%2C<AUTH_TOKEN>' \
+  -H 'x-cg-apikey: 502b657c-624c-11eb-8024-f4d06b721e80'

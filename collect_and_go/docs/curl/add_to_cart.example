@@ -1,0 +1,20 @@
+# Verified add-to-cart request (credentials scrubbed — structure only).
+#
+# Key learnings baked into collectandgo.py:
+#   * endpoint: POST …/v2/store/90004/cart            (not PUT cart/@self/…)
+#   * catalogId is the STORE catalog (10646, from the COL_SHOP cookie
+#     "CLPBE_10646"), not the generic 10429
+#   * productId = the product's numeric uniqueID (catalog-entry id)
+#   * xitem_field2 = "P|<qty>|st"  (unit type | quantity | unit)
+#   * wcauthtoken header = the WC_AUTHENTICATION_<userId> cookie value verbatim
+
+curl --url 'https://apip.collectandgo.be/gateway/ecomfoodb2c.eshop.wcscartsvcv2/v2/store/90004/cart?langId=-1001&catalogId=10646' \
+  -H 'accept: */*' \
+  -H 'content-type: application/json' \
+  -b 'WC_SESSION_ESTABLISHED=true; WC_ACTIVEPOINTER=-1001%2C90004; COL_SHOP=CLPBE_10646; WC_AUTHENTICATION_<USER_ID>=<USER_ID>%2C<AUTH_TOKEN>; WC_USERACTIVITY_<USER_ID>=<USER_ID>%2C90004%2Cnull%2C%E2%80%A6' \
+  -H 'origin: https://www.collectandgo.be' \
+  -H 'referer: https://www.collectandgo.be/' \
+  -H 'user-agent: Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36' \
+  -H 'wcauthtoken: <USER_ID>%2C<AUTH_TOKEN>' \
+  -H 'x-cg-apikey: 502b657c-624c-11eb-8024-f4d06b721e80' \
+  --data-raw '{"orderItem":[{"productId":"<NUMERIC_UNIQUEID>","quantity":"1","xitem_field2":"P|1|st"}]}'
