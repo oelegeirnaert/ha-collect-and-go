@@ -16,3 +16,10 @@ configuration:
       via het add-onpaneel — vul dit alleen in als je de configuratie liever
       hier beheert. Een sessie die via het paneel is opgeslagen heeft
       voorrang.
+  wcauthtoken:
+    name: Collect&Go-token (optioneel)
+    description: >-
+      De wcauthtoken-cookie van collectandgo.be. Maakt de echte winkelmand,
+      bestelgeschiedenis en rechtstreeks toevoegen aan de winkelmand
+      mogelijk. Wordt normaal via het add-onpaneel opgeslagen; een token
+      uit het paneel heeft voorrang.

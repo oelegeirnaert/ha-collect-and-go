@@ -4,6 +4,22 @@ All notable changes to the Collect & Go add-on. This project follows
 [Semantic Versioning](https://semver.org/): **MAJOR** for breaking changes,
 **MINOR** for new features, **PATCH** for fixes.
 
+## [1.2.0] — 2026-10-26
+
+### Added
+
+- Collect&Go WCS gateway integration (see `docs/api-collect-and-go-notes.md`):
+  - View the **live Collect&Go cart** (`GET /api/cart`) and your **order
+    history** (`GET /api/orders`) straight from the panel.
+  - New `wcauthtoken` support: paste the token from collectandgo.be in the
+    setup panel (or the `wcauthtoken` add-on option); it is stored with the
+    session and sent as a header to the cart/order gateways.
+  - New `source=wcs` search backend (`/api/search?q=...&source=wcs`) using
+    the Collect&Go shop catalog — results carry the `partNumber` that the
+    cart endpoints accept.
+- Direct add-to-cart now sends the WCS `partNumber`/`quantity` payload and
+  uses the stored `wcauthtoken`.
+
 ## [1.0.1] — 2026-10-22
 
 ### Fixed

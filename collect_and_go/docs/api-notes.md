@@ -40,6 +40,31 @@ Product fields used: `technicalArticleNumber` (= productId), `name`,
 `price.basicPrice`, `price.measurementUnit`, `price.measurementUnitPrice`,
 `isAvailable`, `IsWeightArticle`, `GTIN`.
 
+## Collect&Go WCS gateway (cart, orders, shop search)
+
+The Collect&Go shop itself runs on an HCL/WCS commerce backend with its own
+gateways under `https://apip.collectandgo.be/gateway` (see
+docs/api-collect-and-go-notes.md).
+
+Auth for these endpoints: the public `x-cg-apikey` header **plus** a dynamic
+`wcauthtoken` header (session token, copied from a logged-in
+collectandgo.be browser session), and `content-type: application/json`.
+
+| Endpoint | Method | Notes |
+| --- | --- | --- |
+| `/ecomfoodb2c.eshop.wcsproductviewsearchsvc/v1/store/90004/productview/bySearchTerm/{term}` | GET | Shop search; products in `catalogEntryView`, id = `partNumber` |
+| `/ecomfoodb2c.eshop.wcscartsvcv2/v2/store/90004/cart/@self` | GET | Live cart contents (`orderItem` array) |
+| `/ecomfoodb2c.eshop.wcscartsvcv2/v2/store/90004/cart/@self/update_order_item` | PUT | Add to cart, body `{"orderItem": [{"partNumber", "quantity"}], "catalogId", "langId"}` |
+| `/ecomfoodb2c.eshop.wcsordersvcv2/v2/store/90004/order/@history` | GET | Past orders (`Order` array) |
+
+Store id `90004`, catalogId `10429`, langId `-1001` (nl) / `-1002` (fr),
+apiGatewayKey `502b657c-624c-11eb-8024-f4d06b721e80`.
+
+Checkout is a multi-step state machine (PUT the handover service, e.g.
+`COLLECTNEXTDAY`, on the cart, then a final POST to submit) and stays in the
+official app/website. Token refresh would go through the `/xtra/authentication`
+endpoints, but login needs SMS 2FA, so the add-on just stores a pasted token.
+
 ## List vs. cart
 
 The Xtra **shopping list** (above) is shared account-wide and shows up in the

@@ -14,3 +14,9 @@ configuration:
       The clpbff_session cookie value of your Xtra account. Normally you
       connect via the add-on panel instead — only fill this in if you prefer
       configuration-as-code. A session saved in the panel takes precedence.
+  wcauthtoken:
+    name: Collect&Go token (optional)
+    description: >-
+      The wcauthtoken cookie from collectandgo.be. Enables the live cart
+      view, order history and direct add-to-cart. Normally saved via the
+      add-on panel; a token saved in the panel takes precedence.
